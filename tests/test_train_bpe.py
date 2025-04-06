@@ -60,3 +60,6 @@ def test_train_bpe():
     # have been constructed differently, we'll make sure that the vocab keys and values match)
     assert set(vocab.keys()) == set(reference_vocab.keys())
     assert set(vocab.values()) == set(reference_vocab.values())
+
+if __name__ == "main":
+    test_train_bpe_speed()
