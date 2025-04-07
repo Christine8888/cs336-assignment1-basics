@@ -55,12 +55,16 @@ class Tokenizer():
 
         # encode words
         encoded = []
-        for word in word_list:
+        n_words = len(word_list)
+        for i, word in enumerate(word_list):
             if word in self.special_tokens:
                 encoded.append(self.token_to_id[word.encode('utf-8')])
             else:
                 merged = self.encode_word_from_merges(word)
                 encoded.extend([self.token_to_id[b] for b in merged])
+            
+            if i % 100000 == 0:
+                print(f"encoded {i}/{n_words} words")
         
         return encoded
     
@@ -172,8 +176,24 @@ class Tokenizer():
         # then decode bytes into text
         return byte_list.decode('utf-8', errors='replace')
 
-def test_tokenizer(files = 'tinystories', data_path = './data/TinyStoriesV2-GPT4-valid.txt'):
+def chunked_text_generator(filepath, chunk_size=1_000_000):
+    with open(filepath, 'r') as f:
+        buffer = []
+        total_chars = 0
+        for line in f:
+            buffer.append(line)
+            total_chars += len(line)
+            if total_chars >= chunk_size:
+                yield ''.join(buffer)
+                buffer = []
+                total_chars = 0
+        if buffer:
+            yield ''.join(buffer)
+
+def test_tokenizer(files = 'tinystories', data_path = '../data/owt_valid.txt'):
     tokenizer = Tokenizer.from_files(vocab_filepath = f"./models/{files}_vocab.pkl", merges_filepath = f"./models/{files}_merges.pkl")
+    # print(tokenizer.merges)
+    
     text = open(data_path, "r").read()
     text = text.split("<|endoftext|>")
     sampled_texts = random.sample(text, 10)
@@ -182,27 +202,28 @@ def test_tokenizer(files = 'tinystories', data_path = './data/TinyStoriesV2-GPT4
     for text in sampled_texts:
         text_bytes = text.encode('utf-8')
         encoded_ids = tokenizer.encode(text)
+        print([tokenizer.decode([id]) for id in encoded_ids])
         compression_ratios.append(len(text_bytes) / len(encoded_ids))
     
     print(f"Average compression ratio: {sum(compression_ratios) / len(compression_ratios)}")
 
-def tokenize_corpus(files = 'tinystories', data_path = './data/TinyStoriesV2-GPT4', split = 'valid'):
+def tokenize_corpus(files = 'tinystories', data_path = '../data/TinyStoriesV2-GPT4', split = 'valid'):
     tokenizer = Tokenizer.from_files(vocab_filepath = f"./models/{files}_vocab.pkl", merges_filepath = f"./models/{files}_merges.pkl")
-    text = open(f"{data_path}-{split}.txt", "r").read()
+    
     start_time = time.time()
-    tokenized_text = tokenizer.encode(text)
+    tokenized_text = tokenizer.encode_iterable(chunked_text_generator(f"{data_path}-{split}.txt"))
     
     # save tokenized text to numpy array, dtype = uint16
     tokenized_text = np.array(tokenized_text, dtype=np.uint16)
-    with open(f"./data/{files}_tokenized-{split}.npy", "wb") as f:
+    with open(f"../data/{files}_tokenized-{split}.npy", "wb") as f:
         np.save(f, tokenized_text)
     
     end_time = time.time()
     print(f"total time: {end_time - start_time} seconds")
-    total_bytes = len(text.encode('utf-8'))
+    total_bytes = len(tokenizer.decode(tokenized_text).encode('utf-8'))
     print(f"total bytes: {total_bytes}")
     print(f"throughput: {total_bytes / (end_time - start_time)} bytes per second")
     return tokenized_text
 
 if __name__ == "__main__":
-    tokenize_corpus()
+    test_tokenizer()
