@@ -5,6 +5,12 @@ import pickle
 import random
 import time
 import numpy as np
+import multiprocessing
+from functools import partial
+import os
+
+MULTI = 32 #max(multiprocessing.cpu_count() - 1, 1)
+CHUNK_SIZE = 10_000_000
 
 class Tokenizer():
     def __init__(self, vocab, merges, special_tokens = None):
@@ -63,8 +69,8 @@ class Tokenizer():
                 merged = self.encode_word_from_merges(word)
                 encoded.extend([self.token_to_id[b] for b in merged])
             
-            if i % 100000 == 0:
-                print(f"encoded {i}/{n_words} words")
+            # if i % 1000000 == 0:
+            #     print(f"encoded {i}/{n_words} words")
         
         return encoded
     
@@ -120,45 +126,87 @@ class Tokenizer():
        
         return False
 
-    def encode_iterable(self, iterable: Iterable[str]):
-        def process():
-            # make iterator
-            iterator = iter(iterable)
+    # def encode_iterable(self, iterable: Iterable[str]):
+    #     def process():
+    #         # make iterator
+    #         iterator = iter(iterable)
             
-            # try to get first item
-            try:
-                buffer = next(iterator)
-            except StopIteration:
-                # empty iterable, throw error
-                return []
+    #         # try to get first item
+    #         try:
+    #             buffer = next(iterator)
+    #         except StopIteration:
+    #             # empty iterable, throw error
+    #             return []
                 
-            # stream through items, holding a buffer
-            for current in iterator:    
-                if self.token_crosses_boundary(buffer, current):
-                    # boundary case - combine current and buffer chunk
-                    combined = buffer + current
-                    encoded_result = self.encode(combined)
-                    for id in encoded_result:
-                        yield id
+    #         # stream through items, holding a buffer
+    #         for current in iterator:    
+    #             if self.token_crosses_boundary(buffer, current):
+    #                 # boundary case - combine current and buffer chunk
+    #                 combined = buffer + current
+    #                 encoded_result = self.encode(combined)
+    #                 for id in encoded_result:
+    #                     yield id
                     
-                    # reset buffer for next iteration
-                    try:
-                        buffer = next(iterator)
-                    except StopIteration:
-                        # no more items
-                        return
-                else:
-                    # no boundary issues; encode buffer and update
-                    encoded_result = self.encode(buffer)
-                    for id in encoded_result:
-                        yield id
-                    buffer = current
+    #                 # reset buffer for next iteration
+    #                 try:
+    #                     buffer = next(iterator)
+    #                 except StopIteration:
+    #                     # no more items
+    #                     return
+    #             else:
+    #                 # no boundary issues; encode buffer and update
+    #                 encoded_result = self.encode(buffer)
+    #                 for id in encoded_result:
+    #                     yield id
+    #                 buffer = current
             
-            # last item
-            encoded_result = self.encode(buffer)
-            for id in encoded_result:
-                yield id
+    #         # last item
+    #         encoded_result = self.encode(buffer)
+    #         for id in encoded_result:
+    #             yield id
 
+    #     return list(process())
+    def _process_chunk(self, text_chunk):
+        return self.encode(text_chunk)
+
+    def encode_iterable(self, iterable: Iterable[str],):
+        """
+        encode an iterable of text chunks using multiprocessing.
+        """
+        def process():
+            # create iterator
+            iterator = iter(iterable)
+            batch_num = 0
+
+            # process in batches
+            with multiprocessing.Pool(processes=MULTI) as pool:
+                process_func = partial(self._process_chunk)
+                
+                while True:
+                    print(f"Processing batch {batch_num}", flush=True)
+                    batch_num += 1
+
+                    # collect a batch of chunks
+                    batch = []
+                    for _ in range(MULTI):
+                        try:
+                            chunk = next(iterator)
+                            batch.append(chunk)
+                        except StopIteration:
+                            break
+                    
+                    if not batch:
+                        break
+                    
+                    # process in batches
+                    results = pool.map(process_func, batch)
+                    
+                    # yield results
+                    for encoded_chunk in results:
+                        for token_id in encoded_chunk:
+                            yield token_id
+        
+        # return list of token ids, flattened
         return list(process())
     
     def decode(self, ids):
@@ -176,27 +224,29 @@ class Tokenizer():
         # then decode bytes into text
         return byte_list.decode('utf-8', errors='replace')
 
-def chunked_text_generator(filepath, chunk_size=1_000_000):
+def chunked_text_generator(filepath):
     with open(filepath, 'r') as f:
         buffer = []
         total_chars = 0
         for line in f:
             buffer.append(line)
             total_chars += len(line)
-            if total_chars >= chunk_size:
+            if total_chars >= CHUNK_SIZE:
                 yield ''.join(buffer)
                 buffer = []
                 total_chars = 0
         if buffer:
             yield ''.join(buffer)
 
-def test_tokenizer(files = 'tinystories', data_path = '../data/owt_valid.txt'):
+def test_tokenizer(files = 'openwebtext', data_path = '../data/owt_valid.txt'):
     tokenizer = Tokenizer.from_files(vocab_filepath = f"./models/{files}_vocab.pkl", merges_filepath = f"./models/{files}_merges.pkl")
     # print(tokenizer.merges)
     
     text = open(data_path, "r").read()
     text = text.split("<|endoftext|>")
-    sampled_texts = random.sample(text, 10)
+    # set random seed for reproducibility
+    random.seed(42)
+    sampled_texts = random.sample(text, 1)
 
     compression_ratios = []
     for text in sampled_texts:
@@ -207,11 +257,11 @@ def test_tokenizer(files = 'tinystories', data_path = '../data/owt_valid.txt'):
     
     print(f"Average compression ratio: {sum(compression_ratios) / len(compression_ratios)}")
 
-def tokenize_corpus(files = 'tinystories', data_path = '../data/TinyStoriesV2-GPT4', split = 'valid'):
+def tokenize_corpus(files = 'openwebtext', data_path = '../data/owt_', split = 'train'):
     tokenizer = Tokenizer.from_files(vocab_filepath = f"./models/{files}_vocab.pkl", merges_filepath = f"./models/{files}_merges.pkl")
     
     start_time = time.time()
-    tokenized_text = tokenizer.encode_iterable(chunked_text_generator(f"{data_path}-{split}.txt"))
+    tokenized_text = tokenizer.encode_iterable(chunked_text_generator(f"{data_path}{split}.txt"))
     
     # save tokenized text to numpy array, dtype = uint16
     tokenized_text = np.array(tokenized_text, dtype=np.uint16)
@@ -220,10 +270,12 @@ def tokenize_corpus(files = 'tinystories', data_path = '../data/TinyStoriesV2-GP
     
     end_time = time.time()
     print(f"total time: {end_time - start_time} seconds")
-    total_bytes = len(tokenizer.decode(tokenized_text).encode('utf-8'))
+    # total_bytes = len(tokenizer.decode(tokenized_text).encode('utf-8'))
+    # get file size
+    total_bytes = os.path.getsize(f"../data/{files}_tokenized-{split}.npy")
     print(f"total bytes: {total_bytes}")
     print(f"throughput: {total_bytes / (end_time - start_time)} bytes per second")
     return tokenized_text
 
 if __name__ == "__main__":
-    test_tokenizer()
+    tokenize_corpus()

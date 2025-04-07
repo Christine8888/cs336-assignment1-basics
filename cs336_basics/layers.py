@@ -49,8 +49,16 @@ class RMSNorm(nn.Module):
         
         return result.to(in_dtype)
 
+def silu(x: torch.Tensor) -> torch.Tensor:
+    return x * torch.sigmoid(x)
+
 class SwiGLU(nn.Module):
     def __init__(self, d_model, d_ff = None, device = None, dtype = None):
+        """Layers have the following shapes:
+        W1: (d_ff, d_model)
+        W2: (d_model, d_ff)
+        W3: (d_ff, d_model)
+        """
         super().__init__()
         
         if d_ff is None:
@@ -70,10 +78,10 @@ class SwiGLU(nn.Module):
         w3x = einops.einsum(x, self.W3, "... d_model, d_ff d_model -> ... d_ff")
         
         # element-wise products
-        silu = w1x * torch.sigmoid(w1x)
-        silu = silu * w3x
+        z = silu(w1x)
+        z = z * w3x
 
-        result = einops.einsum(silu, self.W2, "... d_ff, d_model d_ff -> ... d_model")
+        result = einops.einsum(z, self.W2, "... d_ff, d_model d_ff -> ... d_model")
         return result
 
 class RoPE(nn.Module):
@@ -103,7 +111,7 @@ class RoPE(nn.Module):
         assert d_k == self.d_k
 
         # get cos/sin values up to sequence length
-        if token_positions:
+        if token_positions is not None:
             cos_values = self.cos_cache[token_positions, :]
             sin_values = self.sin_cache[token_positions, :]
         else:
@@ -161,13 +169,14 @@ def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tens
     return result
 
 class MultiHeadSelfAttention(nn.Module):
-    def __init__(self, d_model: int, num_heads: int, rope: nn.Module, device = None, dtype = None):
+    def __init__(self, d_model: int, num_heads: int, rope: nn.Module = None, device = None, dtype = None):
+        super().__init__()
+
         self.num_heads = num_heads
         self.d_model = d_model
         self.rope = rope
 
         # assuming d_k = d_v = d_model / num_heads
-        super().__init__()
         # hdk, dmodel
         self.WQ = nn.Parameter(torch.zeros(d_model, d_model, device = device, dtype = dtype))
         self.WK = nn.Parameter(torch.zeros(d_model, d_model, device = device, dtype = dtype))
@@ -189,13 +198,17 @@ class MultiHeadSelfAttention(nn.Module):
         causal_mask = torch.tril(torch.ones(seq_len, seq_len, device = x.device, dtype = torch.float32))
         
         # multi-head attention; first compute vectors
-        Q = einops.einsum(self.WQ, x, "(h dk) d_model, ... seq_len d_model -> ... h seq_len dk", h = self.num_heads)
-        K = einops.einsum(self.WK, x, "(h dk) d_model, ... seq_len d_model -> ... h seq_len dk", h = self.num_heads)
-        V = einops.einsum(self.WV, x, "(h dv) d_model, ... seq_len d_model -> ... h seq_len dv", h = self.num_heads)
+        Q = einops.rearrange(self.WQ, "(h dk) d_model -> h dk d_model", h = self.num_heads)
+        Q = einops.einsum(Q, x, "h dk d_model, ... seq_len d_model -> ... h seq_len dk")
+        K = einops.rearrange(self.WK, "(h dk) d_model -> h dk d_model", h = self.num_heads)
+        K = einops.einsum(K, x, "h dk d_model, ... seq_len d_model -> ... h seq_len dk")
+        V = einops.rearrange(self.WV, "(h dv) d_model -> h dv d_model", h = self.num_heads)
+        V = einops.einsum(V, x, "h dv d_model, ... seq_len d_model -> ... h seq_len dv")
 
         # now apply RoPE
-        Q = self.rope(Q)
-        K = self.rope(K)
+        if self.rope:
+            Q = self.rope(Q)
+            K = self.rope(K)
 
         # compute dot product attention
         attn = scaled_dot_product_attention(Q, K, V, mask = causal_mask)

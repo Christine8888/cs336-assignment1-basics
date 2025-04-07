@@ -12,6 +12,7 @@ from torch import Tensor
 from cs336_basics import bpe
 from cs336_basics import tokenizer
 from cs336_basics import layers
+from cs336_basics import transformer
 
 
 
@@ -156,8 +157,15 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
-
+    mhsa = layers.MultiHeadSelfAttention(d_model, num_heads)
+    state_dict = {
+        "WQ": q_proj_weight,
+        "WK": k_proj_weight,
+        "WV": v_proj_weight,
+        "WO": o_proj_weight
+    }
+    mhsa.load_state_dict(state_dict)
+    return mhsa(in_features)
 
 def run_multihead_self_attention_with_rope(
     d_model: int,
@@ -196,8 +204,16 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
-
+    rope = layers.RoPE(theta, d_model // num_heads, max_seq_len)
+    mhsa = layers.MultiHeadSelfAttention(d_model, num_heads, rope)
+    state_dict = {
+        "WQ": q_proj_weight,
+        "WK": k_proj_weight,
+        "WV": v_proj_weight,
+        "WO": o_proj_weight
+    }
+    mhsa.load_state_dict(state_dict)
+    return mhsa(in_features)
 
 def run_rope(
     d_k: int,
@@ -292,8 +308,22 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
-
+    rope = layers.RoPE(theta, d_model // num_heads, max_seq_len)
+    # test kwargs too
+    block = transformer.TransformerBlock(d_model, num_heads, d_ff, rope, dtype = torch.float32, device = 'cpu')
+    state_dict = {
+        "attn.WQ": weights["attn.q_proj.weight"],
+        "attn.WK": weights["attn.k_proj.weight"],
+        "attn.WV": weights["attn.v_proj.weight"],
+        "attn.WO": weights["attn.output_proj.weight"],
+        "ln1.gain": weights["ln1.weight"],
+        "ffn.W1": weights["ffn.w1.weight"],
+        "ffn.W2": weights["ffn.w2.weight"],
+        "ffn.W3": weights["ffn.w3.weight"],
+        "ln2.gain": weights["ln2.weight"],
+    }
+    block.load_state_dict(state_dict)
+    return block(in_features)
 
 def run_transformer_lm(
     vocab_size: int,
@@ -374,7 +404,28 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    lm = transformer.TransformerLM(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff)
+    # adapt state dict
+    state_dict = {
+        "embedding.matrix": weights["token_embeddings.weight"]
+    }
+
+    for i in range(num_layers):
+        state_dict[f"layers.{i}.attn.WQ"] = weights[f"layers.{i}.attn.q_proj.weight"]
+        state_dict[f"layers.{i}.attn.WK"] = weights[f"layers.{i}.attn.k_proj.weight"]
+        state_dict[f"layers.{i}.attn.WV"] = weights[f"layers.{i}.attn.v_proj.weight"]
+        state_dict[f"layers.{i}.attn.WO"] = weights[f"layers.{i}.attn.output_proj.weight"]
+        state_dict[f"layers.{i}.ln1.gain"] = weights[f"layers.{i}.ln1.weight"]
+        state_dict[f"layers.{i}.ffn.W1"] = weights[f"layers.{i}.ffn.w1.weight"]
+        state_dict[f"layers.{i}.ffn.W2"] = weights[f"layers.{i}.ffn.w2.weight"]
+        state_dict[f"layers.{i}.ffn.W3"] = weights[f"layers.{i}.ffn.w3.weight"]
+        state_dict[f"layers.{i}.ln2.gain"] = weights[f"layers.{i}.ln2.weight"]
+
+    state_dict["ln_final.gain"] = weights["ln_final.weight"]
+    state_dict["lm_head.weight"] = weights["lm_head.weight"]
+    lm.load_state_dict(state_dict)
+    
+    return lm(in_indices)
 
 
 def run_rmsnorm(
@@ -414,7 +465,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    return layers.silu(in_features)
 
 
 def run_get_batch(

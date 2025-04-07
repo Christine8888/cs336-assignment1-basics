@@ -119,8 +119,8 @@ class BPE():
         
         for pair, count in self.pairs.items():
             if pair not in self.pair_strings:
-                self.pair_strings[pair] = self.decode_pair(pair, string=True)
-            heapq.heappush(self.pair_heap, (-count, invert_string(self.pair_strings[pair]), pair))
+                self.pair_strings[pair] = invert_string(self.decode_pair(pair, string=True))
+            heapq.heappush(self.pair_heap, (-count, self.pair_strings[pair], pair))
 
         end = time.time()
         print(f"Time taken: {end - start} seconds")
@@ -183,7 +183,7 @@ class BPE():
                     self.locations[old_pair].discard(word)
                 
                 if old_pair in self.pairs:
-                    heapq.heappush(self.pair_heap, (-self.pairs[old_pair], invert_string(self.pair_strings[old_pair]), old_pair))
+                    heapq.heappush(self.pair_heap, (-self.pairs[old_pair], self.pair_strings[old_pair], old_pair))
 
             # apply the merge (replace all occurrences of the pair)
             i = 0
@@ -212,9 +212,9 @@ class BPE():
                 self.locations[new_pair].add(word)
                 
                 if new_pair not in self.pair_strings:
-                    self.pair_strings[new_pair] = self.decode_pair(new_pair, string = True)
+                    self.pair_strings[new_pair] = invert_string(self.decode_pair(new_pair, string = True))
 
-                heapq.heappush(self.pair_heap, (-self.pairs[new_pair], invert_string(self.pair_strings[new_pair]), new_pair))
+                heapq.heappush(self.pair_heap, (-self.pairs[new_pair], self.pair_strings[new_pair], new_pair))
 
         # track merge
         byte_merge = self.decode_pair(merge_pair, string=False)
@@ -224,7 +224,7 @@ class BPE():
     def train(self, vocab_size: int):
         while self.size < vocab_size and self.pairs:
             self.update()
-            if self.size % 100 == 0:
+            if self.size % 10 == 0:
                 print(self.size)
         
         return self.vocabulary, self.merges
@@ -278,7 +278,7 @@ def train_tinystories():
     tokenizer.save_model('tinystories')
 
 def train_openwebtext():
-    data_path = BASE_PATH + "/data/owt_train.txt" 
+    data_path = BASE_PATH + "/data/owt_valid.txt" 
     tokenizer = BPE(data_path, special_tokens = ["<|endoftext|>"])
     vocab_size = 32000
     vocabulary, merges = tokenizer.train(vocab_size)
