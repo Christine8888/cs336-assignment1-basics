@@ -8,6 +8,7 @@ import time
 import cProfile
 import pstats
 from pstats import SortKey
+import pickle
 
 N_BYTES = 256
 BASE_PATH = "/users/christineye/cs336/assignment1-basics"
@@ -195,14 +196,11 @@ class BPE():
 
 
     def train(self, vocab_size: int):
-        start_time = time.time()
         while self.size < vocab_size and self.pairs:
             self.update()
             if self.size % 100 == 0:
                 print(self.size)
         
-        end_time = time.time()
-        print(end_time - start_time)
         return self.vocabulary, self.merges
 
     def save_model(self, output_name):
@@ -213,14 +211,15 @@ class BPE():
         # convert to lists
         serializable_merges = []
         # merges is a list of tuples, where each tuple is a pair of bytes
-        for (byte1, byte2) in sorted(self.merges, key=lambda x: x[1], reverse=True):
+        for (byte1, byte2) in self.merges:
             serializable_merges.append([byte1, byte2])
         
-        # make new json files
-        with open("./models/" + output_name + "_vocab.json", 'w') as f:
-            json.dump(serializable_vocab, f, indent=2)
-        with open("./models/" + output_name + "_merges.json", 'w') as f:
-            json.dump(serializable_merges, f, indent=2)
+        # make pickles
+        with open("./models/" + output_name + "_vocab.pkl", 'wb') as f:
+            pickle.dump(serializable_vocab, f)
+            
+        with open("./models/" + output_name + "_merges.pkl", 'wb') as f:
+            pickle.dump(serializable_merges, f)
 
 def analyze_profile(name = 'bpe_stats'):
     # load stats file
@@ -244,7 +243,7 @@ def analyze_profile(name = 'bpe_stats'):
     p.sort_stats(SortKey.CUMULATIVE).print_stats("BPE")
 
 def train_tinystories():
-    data_path = BASE_PATH + "/data/TinyStoriesV2-GPT4-valid.txt"
+    data_path = BASE_PATH + "/data/TinyStoriesV2-GPT4-train.txt"
     tokenizer = BPE(data_path, special_tokens = ["<|endoftext|>"])
     vocab_size = 10000
     vocabulary, merges = tokenizer.train(vocab_size)
@@ -253,12 +252,14 @@ def train_tinystories():
     tokenizer.save_model('tinystories')
 
 def train_openwebtext():
-    data_path = BASE_PATH + "/data/owt_valid.txt" 
+    data_path = BASE_PATH + "/data/owt_train.txt" 
     tokenizer = BPE(data_path, special_tokens = ["<|endoftext|>"])
     vocab_size = 32000
     vocabulary, merges = tokenizer.train(vocab_size)
     tokenizer.save_model('openwebtext')
 
 if __name__=="__main__":
-    cProfile.run('train_tinystories()', 'bpe_stats')
-    analyze_profile()  
+    # also profile memory usage
+    # cProfile.run('train_openwebtext()', 'bpe_stats')
+    # analyze_profile()  
+    train_tinystories()
