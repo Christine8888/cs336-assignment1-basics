@@ -24,7 +24,6 @@ class TransformerBlock(nn.Module):
         # it's so beautiful that my layers are all properly batched!
         h = x + self.attn(self.ln1(x))
         
-        # i guess it's not a proper residual connection? literally so much guesswork to pass the tests lol
         # the x add is already implicit in h
         h = h + self.ffn(self.ln2(h))
         return h

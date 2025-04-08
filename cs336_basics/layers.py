@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import einops
 import math
+from jaxtyping import Float
 
 class Linear(nn.Module):
     def __init__(self, in_features, out_features, device = None, dtype = None):
@@ -105,6 +106,10 @@ class RoPE(nn.Module):
         self.register_buffer("sin_cache", sin_cache, persistent = False)
     
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
+        # core vectorization idea: 
+        # we can reuse the same cos/sin values for everything with the same token positions, and every vector has the same dimension
+        # the rotation only happens on 2 x 2 blocks, so we can just split the even and odd indices instead of doing a matmul
+
         seq_len = x.shape[-2]
         d_k = x.shape[-1]
         assert d_k % 2 == 0
@@ -123,7 +128,7 @@ class RoPE(nn.Module):
         even_x = x_split[..., 0] # shape: (..., seq_len, d_k // 2)
         odd_x = x_split[..., 1] # shape: (..., seq_len, d_k // 2)
 
-        # compute top and bottom halves of rotation
+        # compute top and bottom halves of rotation aka top/bottom halves of R_k^i q^i matmul
         x_rotate_even = even_x * cos_values - odd_x * sin_values
         x_rotate_odd = even_x * sin_values + odd_x * cos_values
 
@@ -150,7 +155,10 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     
     return x
 
-def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+def scaled_dot_product_attention(Q: Float[torch.Tensor, "... seq_len_q d_k"], 
+                                 K: Float[torch.Tensor, "... seq_len_k d_k"], 
+                                 V: Float[torch.Tensor, "... seq_len_k d_v"], 
+                                 mask: Float[torch.Tensor, "... seq_len_q seq_len_k"] = None) -> Float[torch.Tensor, "... seq_len_q d_v"]:
     d_k = Q.shape[-1]
     
     # sum over hidden dimension to get dot product
@@ -195,6 +203,7 @@ class MultiHeadSelfAttention(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         seq_len = x.shape[-2]
         # dim 0 = queries, dim 1 = keys
+        # lower triangular causal mask: queries only have access to previous/current tokens
         causal_mask = torch.tril(torch.ones(seq_len, seq_len, device = x.device, dtype = torch.float32))
         
         # multi-head attention; first compute vectors
