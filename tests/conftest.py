@@ -1,12 +1,14 @@
+from typing import TypeVar
 import numpy as np
 import pytest
 import os
 from pathlib import Path
 import torch
 from torch import Tensor
+import pickle
 
 
-_A = np.ndarray | Tensor
+_A = TypeVar("_A", np.ndarray, Tensor)
 
 def _canonicalize_array(arr: _A) -> np.ndarray:
     if isinstance(arr, Tensor):
@@ -76,6 +78,77 @@ class NumpySnapshot:
                 atol=atol,
                 err_msg=f"Array '{key}' does not match snapshot for {test_name}"
             )
+
+
+class Snapshot:
+    def __init__(self, snapshot_dir: str = "tests/_snapshots"):
+        """
+        Snapshot for arbitrary data types, saved as pickle files.
+        """
+        self.snapshot_dir = Path(snapshot_dir)
+        os.makedirs(self.snapshot_dir, exist_ok=True)
+    
+    def _get_snapshot_path(self, test_name: str) -> Path:
+        return self.snapshot_dir / f"{test_name}.pkl"
+    
+    def assert_match(
+        self,
+        actual: _A | dict[str, _A],
+        test_name: str,
+        force_update: bool = False,
+    ):
+        """
+        Assert that the actual data matches the snapshot.
+        Args:
+            actual: Single object or dictionary of named objects
+            test_name: The name of the test (used for the snapshot file)
+            force_update: If True, update the snapshot instead of comparing
+        """
+    
+        snapshot_path = self._get_snapshot_path(test_name)
+
+
+        # Load the snapshot
+        with open(snapshot_path, "rb") as f:
+            expected_data = pickle.load(f)
+        
+        if isinstance(actual, dict):
+            for key in actual: 
+                if key not in expected_data:
+                    raise AssertionError(f"Key '{key}' not found in snapshot for {test_name}")
+                assert actual[key] == expected_data[key], f"Data for key '{key}' does not match snapshot for {test_name}"
+        else:
+            assert actual == expected_data, f"Data does not match snapshot for {test_name}"
+        
+
+@pytest.fixture
+def snapshot(request):
+    """
+    Fixture providing snapshot testing functionality.
+    
+    Usage:
+        def test_my_function(snapshot):
+            result = my_function()
+            snapshot.assert_match(result, "my_test_name")
+    """
+    force_update = False
+
+    # Create the snapshot handler with default settings
+    snapshot_handler = Snapshot()
+    
+    # Patch the assert_match method to include the update flag by default
+    original_assert_match = snapshot_handler.assert_match
+    
+    def patched_assert_match(actual, test_name=None, force_update=force_update):
+        # If test_name is not provided, use the test function name
+        if test_name is None:
+            test_name = request.node.name
+        return original_assert_match(actual, test_name=test_name, force_update=force_update)
+    
+    snapshot_handler.assert_match = patched_assert_match
+    
+    return snapshot_handler
+
 
 
 # Fixture that can be used in all tests
