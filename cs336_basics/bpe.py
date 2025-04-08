@@ -14,11 +14,49 @@ import heapq
 
 N_BYTES = 256
 BASE_PATH = "/users/christineye/cs336/assignment1-basics"
-MULTI = 32 #multiprocessing.cpu_count() - 1 
+MULTI = 4 #multiprocessing.cpu_count() - 1 
 CHUNK_SIZE = 1024 * 1024 * 50 # 50MB chunks
 
-def chunk_documents(path: str, n_workers: int):
+def chunk_file(file, desired_num_chunks, split_special_token):
+    """
+    Chunk the file into parts that can be counted independently.
+    May return fewer chunks if the boundaries end up overlapping.
+    """
+    assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
+
+    # Get total file size in bytes
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+
+    chunk_size = file_size // desired_num_chunks
+
+    # Initial guesses for chunk boundary locations, uniformly spaced
+    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]  # Chunks start on previous index, don't include last index
+    chunk_boundaries[-1] = file_size
+
+    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
+
+    for bi in range(1, len(chunk_boundaries) - 1):
+        initial_position = chunk_boundaries[bi]
+        file.seek(initial_position)  # Start at boundary guess
+        while True:
+            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
+            if mini_chunk == b"":  # If EOF, this boundary should be at the end of the file
+                chunk_boundaries[bi] = file_size
+                break
+            found_at = mini_chunk.find(split_special_token)  # Find the special token in the mini chunk
+            if found_at != -1:
+                chunk_boundaries[bi] = initial_position + found_at
+                break
+            initial_position += mini_chunk_size
+
+    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
+    return sorted(set(chunk_boundaries))
+
+def chunk_documents(path: str, n_workers: int, special_tokens: list[str] = None):
     # calculate optimal chunk size
+    # old chunking approach
     file_size = os.path.getsize(path)
     chunk_size = file_size // n_workers
     
@@ -29,6 +67,7 @@ def chunk_documents(path: str, n_workers: int):
             # read to next newline
             if position + chunk_size < file_size:
                 chunk += f.readline()
+            # split on special tokens, do not include them in the chunk
             yield chunk
             position = f.tell()
 
@@ -39,8 +78,23 @@ def invert_string(s: str) -> str:
 """Byte-Pair Encoding (BPE) tokenizer"""
 class BPE():
     def process_chunk(self, text, delimiter="<|endoftext|>"):
+        # given a chunk of text
         # optimized counting
+        text = re.split(self.special_pattern, text)
+        text = "".join(text)
         counts = Counter(m.group() for m in self.pattern.finditer(text))
+        return counts
+
+    def process_chunk_from_boundaries(self, boundaries):
+        # optimized counting
+        with open(self.input_path, 'rb') as f:
+            start, end = boundaries
+            text = f.read(end - start).decode("utf-8", errors="ignore")
+            # split and rejoin on special tokens
+            text = re.split(self.special_pattern, text)
+            text = "".join(text)
+            counts = Counter(m.group() for m in self.pattern.finditer(text))
+        
         return counts
 
     def process_vocab(self, words):
@@ -63,6 +117,9 @@ class BPE():
     def __init__(self, input_path: str, special_tokens: list[str] = None):
         # pre-compile regex
         self.pattern = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
+        # build split pattern
+        self.special_pattern = "|".join(re.escape(token) for token in special_tokens)
+        
         self.counts = defaultdict(int)
         self.pairs = defaultdict(int)
         self.words = defaultdict(bytes)
@@ -70,7 +127,7 @@ class BPE():
         self.pair_strings = defaultdict(str)
         self.merges = []
         self.pair_heap = []
-        
+        self.input_path = input_path
         # initialize vocabulary and special tokens
         self.vocabulary = {i: bytes([i]) for i in range(N_BYTES)} # every byte
         for i, token in enumerate(special_tokens):
@@ -87,17 +144,23 @@ class BPE():
         # documents_batched = [documents_split[i::n_batches] for i in range(n_batches)]
         # documents_batched = [''.join(batch) for batch in documents_batched]
         
+        # with open(input_path, 'rb') as f:
+        #     chunks = chunk_file(f, MULTI, "<|endoftext|>".encode("utf-8"))
+        #     boundaries = zip(chunks[:-1], chunks[1:])
+
         # parallelize further steps
         start = time.time()
         with Pool(MULTI) as p:
             print(f"Processing with {MULTI} workers...")
-            chunks = chunk_documents(input_path, n_workers = MULTI)
+            chunks = chunk_documents(input_path, n_workers = MULTI, special_tokens = special_tokens)
             results = p.imap_unordered(self.process_chunk, chunks, chunksize = 4)
-
+            
+            # results = p.imap_unordered(self.process_chunk_from_boundaries, boundaries, chunksize = 4)
+            
             for local_counts in results:
                 for word, count in local_counts.items():
                     self.counts[word] += count
-        
+
         # don't need to parallize?
         for word in self.counts.keys():
             self.words[word] = self.encode(word)
@@ -224,8 +287,8 @@ class BPE():
     def train(self, vocab_size: int):
         while self.size < vocab_size and self.pairs:
             self.update()
-            if self.size % 10 == 0:
-                print(self.size)
+            # if self.size % 10 == 0:
+            #     print(self.size)
         
         return self.vocabulary, self.merges
 

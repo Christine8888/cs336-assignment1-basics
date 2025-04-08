@@ -224,6 +224,7 @@ class Tokenizer():
         # then decode bytes into text
         return byte_list.decode('utf-8', errors='replace')
 
+    
 def chunked_text_generator(filepath):
     with open(filepath, 'r') as f:
         buffer = []
