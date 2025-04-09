@@ -2,7 +2,16 @@
 
 All changes we make to the assignment code or PDF will be documented in this file.
 
-## [1.0.3] - 2024-04-07
+## [1.0.4] - 2025-04-08
+### Added
+- handout: add guidance on parallelizing pretokenization and provide starter code for chunking
+- handout: add guidance on removing special tokens before pretokenization (you should split on them!)
+
+### Changed
+- handout: clarify that .encode() should not perform merges across pre-tokens
+- handout: fix command for compiling model on MPS backend
+
+## [1.0.3] - 2025-04-07
 ### Added
 - code: Test for removing special tokens when training BPE
 
