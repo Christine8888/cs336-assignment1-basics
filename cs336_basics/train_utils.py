@@ -1,6 +1,3 @@
-# add to path
-import sys
-sys.path.append('/users/christineye/cs336/assignment1-basics/cs336_basics')
 import torch
 import numpy as np
 import math
@@ -22,6 +19,7 @@ def CELoss(logits, targets):
     xs = torch.gather(logits_offset, dim = -1, index = targets.unsqueeze(-1)).squeeze(-1)
     xs -= torch.log(torch.sum(torch.exp(logits_offset), dim = -1, keepdim = False))
 
+    # per token loss
     return -1 * torch.mean(xs)
 
 def cosine_annealing(t, alpha_max, alpha_min, T_w, T_c):

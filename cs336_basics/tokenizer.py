@@ -9,10 +9,7 @@ import multiprocessing
 from functools import partial
 import os
 import cProfile
-# add to path
-import sys
-sys.path.append('/users/christineye/cs336/assignment1-basics/cs336_basics')
-import bpe
+from . import bpe
 
 MULTI = 32 #max(multiprocessing.cpu_count() - 1, 1)
 CHUNK_SIZE = 10_000_000

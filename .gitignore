@@ -1,5 +1,6 @@
 cs336_basics/checkpoints
 cs336_basics/wandb
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -8,7 +9,6 @@ __pycache__/
 
 # C extensions
 *.so
-data/
 
 # Distribution / packaging
 .Python

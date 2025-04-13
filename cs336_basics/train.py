@@ -10,6 +10,7 @@ import time
 import argparse
 import json
 
+DATA_DIR = "/users/christineye/cs336/assignment1-basics/data"
 
 class TransformerTrainer:
     def __init__(self, transformer_params, adamw_params, training_params, load_from=None):
@@ -17,8 +18,9 @@ class TransformerTrainer:
         self.adamw_params = adamw_params
         self.training_params = training_params
         self.load_from = load_from
-        self.checkpoint_dir = "checkpoints/"
-        self.data_dir = "/users/christineye/cs336/assignment1-basics/data"
+        self.checkpoint_dir = "./checkpoints/"
+        self.data_dir = DATA_DIR
+        self.total_tokens = 0
         
         # ensure checkpoint directory exists
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -107,7 +109,7 @@ class TransformerTrainer:
             grad_norm = train_utils.gradient_clipping(self.model.parameters(), 1.0) or 0.0
             self.optim.step()
             self.optim.zero_grad()
-            
+            self.total_tokens += self.training_params["batch_size"] * self.training_params["seq_len"]
             # log to wandb
             wandb.log({
                 "loss": loss.item(),
@@ -130,6 +132,15 @@ class TransformerTrainer:
         
         # finish wandb logging
         wandb.finish()
+        
+        # save final results to .txt
+        with open(f"results_{self.run_id}.txt", "w") as f:
+            f.write(f"Total tokens: {self.total_tokens}\n")
+            f.write(f"Total time: {time.time() - self.start_time}\n")
+
+            # compute final loss/perplexity
+            valid_loss = self.validate(i)
+            f.write(f"Final validation loss: {valid_loss}\n")
     
     def validate(self, step):
         with torch.no_grad():
@@ -155,22 +166,23 @@ class TransformerTrainer:
             "valid_loss": valid_loss,
             "valid_perplexity": perplexity,
             "step": step,
+            "total tokens": self.total_tokens,
         })
         
         self.model.train()
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='Train a Transformer Language Model')
+    parser = argparse.ArgumentParser(description='train a Transformer LM')
     
     # transformer parameters
-    parser.add_argument('--d_model', type=int, default=256, help='Model dimension')
-    parser.add_argument('--num_heads', type=int, default=8, help='Number of attention heads')
-    parser.add_argument('--d_ff', type=int, default=1024, help='Feed-forward dimension')
-    parser.add_argument('--rope_theta', type=float, default=1e6, help='RoPE theta parameter')
+    parser.add_argument('--d_model', type=int, default=512, help='Model dimension')
+    parser.add_argument('--num_heads', type=int, default=16, help='Number of attention heads')
+    parser.add_argument('--d_ff', type=int, default=1344, help='Feed-forward dimension')
+    parser.add_argument('--rope_theta', type=float, default=10000, help='RoPE theta parameter')
     parser.add_argument('--num_layers', type=int, default=4, help='Number of transformer layers')
     parser.add_argument('--vocab_size', type=int, default=10000, help='Vocabulary size')
-    parser.add_argument('--context_length', type=int, default=1024, help='Maximum context length')
+    parser.add_argument('--context_length', type=int, default=256, help='Maximum context length')
     
     # adamw parameters
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
@@ -180,13 +192,13 @@ def parse_arguments():
     parser.add_argument('--weight_decay', type=float, default=1e-2, help='Weight decay')
     
     # training parameters
-    parser.add_argument('--n_iter', type=int, default=1000, help='Number of training iterations')
-    parser.add_argument('--checkpoint_every', type=int, default=100, help='Save checkpoint every N iterations')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch size')
-    parser.add_argument('--seq_len', type=int, default=100, help='Sequence length')
+    parser.add_argument('--n_iter', type=int, default=10000, help='Number of training iterations')
+    parser.add_argument('--checkpoint_every', type=int, default=1000, help='Save checkpoint every N iterations')
+    parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
+    parser.add_argument('--seq_len', type=int, default=256, help='Sequence length')
     parser.add_argument('--device', type=str, default='cpu', help='Device (cpu or cuda)')
     parser.add_argument('--n_valid_batches', type=int, default=10, help='Number of validation batches')
-    parser.add_argument('--valid_every', type=int, default=100, help='Validate every N iterations')
+    parser.add_argument('--valid_every', type=int, default=1000, help='Validate every N iterations')
     parser.add_argument('--alpha_max', type=float, default=1e-3, help='Maximum learning rate for cosine annealing')
     parser.add_argument('--alpha_min', type=float, default=1e-4, help='Minimum learning rate for cosine annealing')
     parser.add_argument('--T_w', type=int, default=100, help='Warmup period for cosine annealing')
@@ -248,6 +260,10 @@ def main():
         "run_name": args.run_name,
     }
     
+    print('Training with parameters:')
+    print(transformer_params)
+    print(adamw_params)
+    print(training_params)
     # create trainer instance
     trainer = TransformerTrainer(
         transformer_params=transformer_params,

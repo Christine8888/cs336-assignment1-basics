@@ -1,8 +1,5 @@
-# add to path
-import sys
-sys.path.append('/users/christineye/cs336/assignment1-basics/cs336_basics')
 
-import layers
+from . import layers
 import torch.nn as nn
 import torch
 

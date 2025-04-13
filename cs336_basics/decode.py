@@ -1,7 +1,7 @@
-import transformer
-import tokenizer
+from . import transformer
+from . import tokenizer
 import torch
-import layers
+from . import layers
 
 
 device = 'cpu'
