@@ -14,46 +14,52 @@ import heapq
 
 N_BYTES = 256
 BASE_PATH = "/users/christineye/cs336/assignment1-basics"
-MULTI = 4 #multiprocessing.cpu_count() - 1 
-CHUNK_SIZE = 1024 * 1024 * 50 # 50MB chunks
+MULTI = 1 #multiprocessing.cpu_count() - 1 
+CHUNK_SIZE = 1024 *  50 # 50MB chunks
 
-def chunk_file(file, desired_num_chunks, split_special_token):
+def chunk_documents_streaming(
+    path: str,
+    chunk_size: int = CHUNK_SIZE,
+    special_token: str = "<|endoftext|>"
+):
     """
-    Chunk the file into parts that can be counted independently.
-    May return fewer chunks if the boundaries end up overlapping.
+    Reads 'path' in streaming fashion, yielding chunks of text that
+    each end on a '<|endoftext|>' boundary.
     """
-    assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
 
-    # Get total file size in bytes
-    file.seek(0, os.SEEK_END)
-    file_size = file.tell()
-    file.seek(0)
+    leftover = ""
+    token_len = len(special_token)
 
-    chunk_size = file_size // desired_num_chunks
-
-    # Initial guesses for chunk boundary locations, uniformly spaced
-    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]  # Chunks start on previous index, don't include last index
-    chunk_boundaries[-1] = file_size
-
-    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
-
-    for bi in range(1, len(chunk_boundaries) - 1):
-        initial_position = chunk_boundaries[bi]
-        file.seek(initial_position)  # Start at boundary guess
+    with open(path, "r", encoding="utf-8") as f:
         while True:
-            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
-            if mini_chunk == b"":  # If EOF, this boundary should be at the end of the file
-                chunk_boundaries[bi] = file_size
+            # Read one chunk_size block of text
+            block = f.read(chunk_size)
+            if not block:
+                # no more data in file
                 break
-            found_at = mini_chunk.find(split_special_token)  # Find the special token in the mini chunk
-            if found_at != -1:
-                chunk_boundaries[bi] = initial_position + found_at
-                break
-            initial_position += mini_chunk_size
 
-    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
-    return sorted(set(chunk_boundaries))
+            # combine leftover from previous iteration + new block
+            block = leftover + block
+            leftover = ""
 
+            # find the *last* occurrence of the special token in 'block'
+            last_eot_idx = block.rfind(special_token)
+
+            if last_eot_idx == -1:
+                # no complete document in this chunk
+                # keep everything in leftover for the next read
+                leftover = block
+            else:
+                # up through last_eot_idx is a complete set of docs
+                yield block[: last_eot_idx + token_len]
+                # keep everything after that boundary as leftover
+                leftover = block[last_eot_idx + token_len:]
+
+    # yield leftover text
+    if leftover:
+        yield leftover
+
+# old version, without taking into account EoT
 def chunk_documents(path: str, n_workers: int, special_tokens: list[str] = None):
     # calculate optimal chunk size
     # old chunking approach
@@ -77,12 +83,14 @@ def invert_string(s: str) -> str:
 
 """Byte-Pair Encoding (BPE) tokenizer"""
 class BPE():
-    def process_chunk(self, text, delimiter="<|endoftext|>"):
+    def process_chunk(self, text):
         # given a chunk of text
         # optimized counting
         text = re.split(self.special_pattern, text)
-        text = "".join(text)
-        counts = Counter(m.group() for m in self.pattern.finditer(text))
+        text = [re.finditer(self.pattern, t) for t in text]
+        # flatten list; doing this somehow fixed the vocabulary thing but not the 
+        text = [m.group() for t in text for m in t]
+        counts = Counter(text)
         return counts
 
     def process_chunk_from_boundaries(self, boundaries):
@@ -92,8 +100,10 @@ class BPE():
             text = f.read(end - start).decode("utf-8", errors="ignore")
             # split and rejoin on special tokens
             text = re.split(self.special_pattern, text)
-            text = "".join(text)
-            counts = Counter(m.group() for m in self.pattern.finditer(text))
+            text = [re.finditer(self.pattern, t) for t in text]
+            # flatten list
+            text = [m.group() for t in text for m in t]
+            counts = Counter(text)
         
         return counts
 
@@ -134,15 +144,6 @@ class BPE():
             self.vocabulary[N_BYTES + i] = token.encode('utf-8')
         self.size = N_BYTES + len(special_tokens)
         self.sorted_vocabulary = sorted(self.vocabulary.items(), key = lambda x: len(x[1]), reverse = True)
-
-        # with open(input_path, 'r') as file:
-        #    all_text = file.read()
-        # split on every Nth EOT
-        # documents_split = all_text.split("<|endoftext|>")
-        # num_documents = len(documents_split)
-        # n_batches = MULTI
-        # documents_batched = [documents_split[i::n_batches] for i in range(n_batches)]
-        # documents_batched = [''.join(batch) for batch in documents_batched]
         
         # with open(input_path, 'rb') as f:
         #     chunks = chunk_file(f, MULTI, "<|endoftext|>".encode("utf-8"))
@@ -152,9 +153,8 @@ class BPE():
         start = time.time()
         with Pool(MULTI) as p:
             print(f"Processing with {MULTI} workers...")
-            chunks = chunk_documents(input_path, n_workers = MULTI, special_tokens = special_tokens)
+            chunks = chunk_documents_streaming(input_path)
             results = p.imap_unordered(self.process_chunk, chunks, chunksize = 4)
-            
             # results = p.imap_unordered(self.process_chunk_from_boundaries, boundaries, chunksize = 4)
             
             for local_counts in results:
@@ -180,6 +180,10 @@ class BPE():
                 for pair, locations in local_locations.items():
                     self.locations[pair].update(locations)
         
+        # dump pairs to _{MULTI}_pairs.json
+        with open(f"test_{MULTI}_counts.json", "w") as f:
+            json.dump(self.counts, f)
+
         for pair, count in self.pairs.items():
             if pair not in self.pair_strings:
                 self.pair_strings[pair] = invert_string(self.decode_pair(pair, string=True))
@@ -206,6 +210,7 @@ class BPE():
     def update(self):
         # select best merge
         # merge_pair, count = max(self.pairs.items(), key=lambda x: (x[1], self.pair_strings[x[0]]))
+        
         while self.pair_heap:
             neg_count, neg_string_priority, merge_pair = heapq.heappop(self.pair_heap)
             count = -neg_count
@@ -287,8 +292,8 @@ class BPE():
     def train(self, vocab_size: int):
         while self.size < vocab_size and self.pairs:
             self.update()
-            # if self.size % 10 == 0:
-            #     print(self.size)
+            if self.size % 100 == 0:
+                 print(self.size)
         
         return self.vocabulary, self.merges
 
@@ -310,7 +315,7 @@ class BPE():
         with open("./models/" + output_name + "_merges.pkl", 'wb') as f:
             pickle.dump(serializable_merges, f)
 
-def analyze_profile(name = 'bpe_stats'):
+def analyze_profile(name = 'bpe_stats', classname = 'BPE'):
     # load stats file
     p = pstats.Stats(name)
     
@@ -328,8 +333,8 @@ def analyze_profile(name = 'bpe_stats'):
     p.sort_stats(SortKey.CALLS).print_stats(30)
     
     # filter to only my functions
-    print("\n=== Only functions in your BPE class ===")
-    p.sort_stats(SortKey.CUMULATIVE).print_stats("BPE")
+    print(f"\n=== Only functions in {classname} class ===")
+    p.sort_stats(SortKey.CUMULATIVE).print_stats(classname)
 
 def train_tinystories():
     data_path = BASE_PATH + "/data/TinyStoriesV2-GPT4-train.txt"
@@ -341,7 +346,7 @@ def train_tinystories():
     tokenizer.save_model('tinystories')
 
 def train_openwebtext():
-    data_path = BASE_PATH + "/data/owt_valid.txt" 
+    data_path = BASE_PATH + "/data/owt_train.txt" 
     tokenizer = BPE(data_path, special_tokens = ["<|endoftext|>"])
     vocab_size = 32000
     vocabulary, merges = tokenizer.train(vocab_size)
@@ -349,6 +354,6 @@ def train_openwebtext():
 
 if __name__=="__main__":
     # also profile memory usage
-    cProfile.run('train_openwebtext()', 'bpe_stats')
+    cProfile.run('train_tinystories()', 'bpe_stats')
     analyze_profile()  
     # train_openwebtext()
