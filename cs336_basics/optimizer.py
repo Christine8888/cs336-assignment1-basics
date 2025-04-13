@@ -5,7 +5,7 @@ import torch
 import math
 
 class AdamW(torch.optim.Optimizer):
-    def __init__(self, params, lr = 1e-3, betas = (0.9, 0.95), eps = 1e-8, weight_decay = 1e-2):
+    def __init__(self, params, lr = 1e-3, betas = (0.9, 0.95), eps = 1e-8, weight_decay = 1e-2, device = None, dtype = torch.float32):
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if any(beta < 0 or beta > 1 for beta in betas):
@@ -21,8 +21,8 @@ class AdamW(torch.optim.Optimizer):
         # initialize first and second moments
         for group in self.param_groups:
             for p in group["params"]:
-                self.state[p]["m"] = torch.zeros_like(p.data, dtype = torch.float32)
-                self.state[p]["v"] = torch.zeros_like(p.data, dtype = torch.float32)
+                self.state[p]["m"] = torch.zeros_like(p.data, dtype = dtype, device = device)
+                self.state[p]["v"] = torch.zeros_like(p.data, dtype = dtype, device = device)
     
     def step(self):
         for group in self.param_groups:

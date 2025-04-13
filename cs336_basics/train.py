@@ -1,88 +1,264 @@
-# add to path
-import sys
-sys.path.append('/users/christineye/cs336/assignment1-basics/cs336_basics')
 import torch
+import torch.nn as nn
+import transformer
+import optimizer
+import train_utils
+import wandb
 import numpy as np
-import math
-import random
+import os
+import time
+import argparse
+import json
 
-def CELoss(logits, targets):
-    """Compute cross-entropy loss for a batch of logits and targets.
-    Subtract maximum logit value to prevent overflow."""
-    # we will take the softmax over the last dimension (vocab_size)
-    # we will return the loss averaged over the batch/seq_len dimensions
 
-    # get maximum along each softmax dimension
-    offset = torch.max(logits, dim = -1, keepdim = True)[0]
-
-    # subtract largest element
-    logits = logits - offset
-
-    # apply softmax
-    xs = torch.gather(logits, dim = -1, index = targets.unsqueeze(-1)).squeeze(-1)
-    xs -= torch.log(torch.sum(torch.exp(logits), dim = -1, keepdim = False))
-
-    return -1 * torch.mean(xs)
-
-def cosine_annealing(t, alpha_max, alpha_min, T_w, T_c):
-    """Cosine annealing learning rate scheduler.
-    t: current iteration
-    alpha_max: maximum learning rate
-    alpha_min: minimum learning rate
-    T_w: warmup period
-    T_c: cosine annealing period
-    """
-    if t < T_w:
-        return t * alpha_max / T_w
-    if t <= T_c:
-        return alpha_min + 0.5 * (1 + math.cos((t - T_w) * math.pi / (T_c - T_w))) * (alpha_max - alpha_min)
-
-    return alpha_min
-
-def gradient_clipping(params, max_l2, eps = 1e-6):
-    """Run gradient clipping, modifying in-place.
-    params: Iterable of torch.nn.Parameter objects
-    max_l2: maximum L2 norm of the gradient
-    eps: small constant to prevent division by zero
-    """
-    grad = [p.grad for p in params if p.grad is not None]
-    grads_flat = torch.stack([g.detach().flatten() for g in grad])
+class TransformerTrainer:
+    def __init__(self, transformer_params, adamw_params, training_params, load_from=None):
+        self.transformer_params = transformer_params
+        self.adamw_params = adamw_params
+        self.training_params = training_params
+        self.load_from = load_from
+        self.checkpoint_dir = "checkpoints/"
+        self.data_dir = "/users/christineye/cs336/assignment1-basics/data"
+        
+        # ensure checkpoint directory exists
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+        # setup data paths
+        self.train_path = os.path.join(self.data_dir, f"{training_params['dataset']}_tokenized-train.npy")
+        self.valid_path = os.path.join(self.data_dir, f"{training_params['dataset']}_tokenized-valid.npy")
+        
+        # initialize model
+        self.model = transformer.TransformerLM(**self.transformer_params, 
+                                              device=self.training_params["device"], 
+                                              dtype=self.training_params["dtype"])
+        
+        # initialize optimizer
+        self.optim = optimizer.AdamW(self.model.parameters(), 
+                                    **self.adamw_params, 
+                                    device=self.training_params["device"], 
+                                    dtype=self.training_params["dtype"])
+        
+        print('loaded model and optimizer')
+        
+        # load checkpoint if specified
+        if self.load_from is not None:
+            train_utils.load_checkpoint(self.load_from, self.model, self.optim)
+            print('loaded checkpoint')
+        
+        # initialize run ID for logging
+        self.run_id = time.strftime("%m%d_%H%M%S")
     
-    l2_norm = torch.norm(grads_flat, 2)
-    if l2_norm <= max_l2:
-        return
-    else:
-        coef = max_l2 / (l2_norm + eps)
-        for g in grad:
-            g *= coef
-
-def load_data(x: np.array, batch_size: int, seq_len: int, device: str) -> torch.Tensor:
-    """Load a batch from the input array x, sampling sequences independently.
-    x: input array of shape length x 1
-    batch_size: number of sequences to sample
-    seq_len: length of each sequence
-    device: device to load the data onto
-    """
-    # assume x is of shape length x 1
-    length = x.shape[0]
-    start_indices = random.sample(range(0, length - seq_len), batch_size)
-    batch = np.zeros((batch_size, seq_len))
-    targets = np.zeros((batch_size, seq_len))
+    def load_data(self):
+        # load data memory-efficiently
+        self.train_data = np.load(self.train_path, mmap_mode='r').astype(np.uint16)
+        self.valid_data = np.load(self.valid_path, mmap_mode='r').astype(np.uint16)
+        
+        print('loaded data')
+        
+        # check loading data type
+        assert np.max(self.valid_data) <= np.iinfo(np.uint16).max
     
-    for i, p in enumerate(start_indices):
-        batch[i, :] = x[p: p + seq_len]
-        targets[i, :] = x[p + 1: p + 1 + seq_len]
+    def setup_wandb(self):
+        # initialize wandb logging
+        wandb.init(
+            project="cs336-basics", 
+            name=f"run_{self.run_id}_{self.training_params['dataset']}_{self.training_params['run_name']}", 
+            config={
+                "transformer_params": self.transformer_params,
+                "adamw_params": self.adamw_params,
+                "training_params": self.training_params,
+                "dataset": self.training_params['dataset'],
+            }
+        )
+        self.start_time = time.time()
     
-    return torch.Tensor(batch).to(device), torch.Tensor(targets).to(device)
+    def train(self):
+        # load data if not already loaded
+        if not hasattr(self, 'train_data'):
+            self.load_data()
+        
+        # setup wandb
+        self.setup_wandb()
+        
+        # train loop
+        for i in range(self.training_params["n_iter"]):
+            batch, targets = train_utils.load_data(
+                self.train_data, 
+                self.training_params["batch_size"], 
+                self.training_params["seq_len"], 
+                self.training_params["device"]
+            )
+            
+            # set learning rate
+            lr = train_utils.cosine_annealing(
+                i, 
+                self.training_params["alpha_max"], 
+                self.training_params["alpha_min"], 
+                self.training_params["T_w"], 
+                self.training_params["T_c"]
+            )
+            for param_group in self.optim.param_groups:
+                param_group["lr"] = lr
+            
+            # compute forward pass
+            logits = self.model(batch)
+            loss = train_utils.CELoss(logits, targets)
+            loss.backward()
+            grad_norm = train_utils.gradient_clipping(self.model.parameters(), 1.0) or 0.0
+            self.optim.step()
+            self.optim.zero_grad()
+            
+            # log to wandb
+            wandb.log({
+                "loss": loss.item(),
+                "learning_rate": self.optim.param_groups[0]["lr"],
+                "grad_norm": grad_norm,
+                "step": i,
+                "wallclock": time.time() - self.start_time,
+            })
+            
+            print(f"Step {i} loss: {loss.item()}")
+            
+            # save checkpoints
+            if i % self.training_params["checkpoint_every"] == 0:
+                save_path = os.path.join(self.checkpoint_dir, f"checkpoint_{i}.pt")
+                train_utils.save_checkpoint(self.model, self.optim, i, save_path)
+            
+            # compute validation loss/perplexity
+            if i % self.training_params["valid_every"] == 0:
+                self.validate(i)
+        
+        # finish wandb logging
+        wandb.finish()
+    
+    def validate(self, step):
+        with torch.no_grad():
+            self.model.eval()
+            valid_loss = 0.0
+            
+            for _ in range(self.training_params["n_valid_batches"]):
+                # compute validation loss/perplexity
+                batch, targets = train_utils.load_data(
+                    self.valid_data, 
+                    self.training_params["batch_size"], 
+                    self.training_params["seq_len"], 
+                    self.training_params["device"]
+                )
+                logits = self.model(batch)
+                loss = train_utils.CELoss(logits, targets)
+                valid_loss += loss.item()
+            
+            valid_loss /= self.training_params["n_valid_batches"]
+            perplexity = np.exp(valid_loss)
+            
+        wandb.log({
+            "valid_loss": valid_loss,
+            "valid_perplexity": perplexity,
+            "step": step,
+        })
+        
+        self.model.train()
 
-def save_checkpoint(model, optimizer, iteration, out):
-    to_save = {"model": model.state_dict(),
-               "optimizer": optimizer.state_dict(),
-               "iteration": iteration}
-    torch.save(to_save, out)
 
-def load_checkpoint(src, model, optimizer):
-    loaded = torch.load(src)
-    model.load_state_dict(loaded["model"])
-    optimizer.load_state_dict(loaded["optimizer"])
-    return loaded["iteration"]
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Train a Transformer Language Model')
+    
+    # transformer parameters
+    parser.add_argument('--d_model', type=int, default=256, help='Model dimension')
+    parser.add_argument('--num_heads', type=int, default=8, help='Number of attention heads')
+    parser.add_argument('--d_ff', type=int, default=1024, help='Feed-forward dimension')
+    parser.add_argument('--rope_theta', type=float, default=1e6, help='RoPE theta parameter')
+    parser.add_argument('--num_layers', type=int, default=4, help='Number of transformer layers')
+    parser.add_argument('--vocab_size', type=int, default=10000, help='Vocabulary size')
+    parser.add_argument('--context_length', type=int, default=1024, help='Maximum context length')
+    
+    # adamw parameters
+    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--beta1', type=float, default=0.9, help='AdamW beta1')
+    parser.add_argument('--beta2', type=float, default=0.95, help='AdamW beta2')
+    parser.add_argument('--eps', type=float, default=1e-8, help='AdamW epsilon')
+    parser.add_argument('--weight_decay', type=float, default=1e-2, help='Weight decay')
+    
+    # training parameters
+    parser.add_argument('--n_iter', type=int, default=1000, help='Number of training iterations')
+    parser.add_argument('--checkpoint_every', type=int, default=100, help='Save checkpoint every N iterations')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch size')
+    parser.add_argument('--seq_len', type=int, default=100, help='Sequence length')
+    parser.add_argument('--device', type=str, default='cpu', help='Device (cpu or cuda)')
+    parser.add_argument('--n_valid_batches', type=int, default=10, help='Number of validation batches')
+    parser.add_argument('--valid_every', type=int, default=100, help='Validate every N iterations')
+    parser.add_argument('--alpha_max', type=float, default=1e-3, help='Maximum learning rate for cosine annealing')
+    parser.add_argument('--alpha_min', type=float, default=1e-4, help='Minimum learning rate for cosine annealing')
+    parser.add_argument('--T_w', type=int, default=100, help='Warmup period for cosine annealing')
+    parser.add_argument('--T_c', type=int, default=1000, help='Cycle length for cosine annealing')
+    parser.add_argument('--dataset', type=str, default='tinystories', help='Dataset name')
+    parser.add_argument('--run_name', type=str, default='default', help='Run name for wandb')
+    parser.add_argument('--load_from', type=str, default=None, help='Load checkpoint from file')
+    parser.add_argument('--config', type=str, default=None, help='Config file path (overrides command line args)')
+    
+    args = parser.parse_args()
+    
+    # if config file is provided, load it
+    if args.config is not None:
+        with open(args.config, 'r') as f:
+            config = json.load(f)
+            # update args with config values
+            for key, value in config.items():
+                setattr(args, key, value)
+    
+    return args
+
+
+def main():
+    args = parse_arguments()
+    dtype = torch.float32
+    
+    # make parameter dictionaries
+    transformer_params = {
+        "d_model": args.d_model,
+        "num_heads": args.num_heads,
+        "d_ff": args.d_ff,
+        "rope_theta": args.rope_theta,
+        "num_layers": args.num_layers,
+        "vocab_size": args.vocab_size,
+        "context_length": args.context_length,
+    }
+    
+    adamw_params = {
+        "lr": args.lr,
+        "betas": (args.beta1, args.beta2),
+        "eps": args.eps,
+        "weight_decay": args.weight_decay,
+    }
+    
+    training_params = {
+        "n_iter": args.n_iter,
+        "checkpoint_every": args.checkpoint_every,
+        "batch_size": args.batch_size,
+        "seq_len": args.seq_len,
+        "device": args.device,
+        "dtype": dtype,
+        "n_valid_batches": args.n_valid_batches,
+        "valid_every": args.valid_every,
+        "alpha_max": args.alpha_max,
+        "alpha_min": args.alpha_min,
+        "T_w": args.T_w,
+        "T_c": args.T_c,
+        "dataset": args.dataset,
+        "run_name": args.run_name,
+    }
+    
+    # create trainer instance
+    trainer = TransformerTrainer(
+        transformer_params=transformer_params,
+        adamw_params=adamw_params,
+        training_params=training_params,
+        load_from=args.load_from
+    )
+    
+    # start training
+    trainer.train()
+
+
+if __name__ == "__main__":
+    main()

@@ -116,6 +116,7 @@ class Tokenizer():
         """
         Reads a file in streaming fashion, chunks it by special tokens,
         and encodes each chunk using multiprocessing.
+        one_at_a_time: if True, yield one token at a time; memory-efficient
         """
         batch_num = 0
         special_token = "<|endoftext|>"
@@ -157,10 +158,9 @@ class Tokenizer():
             if leftover:
                 yield leftover
         
-        # Create chunks generator
         if one_at_a_time:
-            # memory efficient
-            chunks = generate_chunks(chunk_size = 10000)
+            # memory efficient, read small chunks
+            chunks = generate_chunks(chunk_size = 1000)
         else:
             chunks = generate_chunks()
         

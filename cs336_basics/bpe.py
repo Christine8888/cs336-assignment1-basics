@@ -292,8 +292,6 @@ class BPE():
     def train(self, vocab_size: int):
         while self.size < vocab_size and self.pairs:
             self.update()
-            if self.size % 100 == 0:
-                 print(self.size)
         
         return self.vocabulary, self.merges
 

@@ -7,7 +7,7 @@ from jaxtyping import Float
 class Linear(nn.Module):
     def __init__(self, in_features, out_features, device = None, dtype = None):
         super().__init__()
-        self.weight = nn.Parameter(torch.zeros(out_features, in_features, device=device, dtype=dtype)) # store W^T
+        self.weight = nn.Parameter(torch.zeros(out_features, in_features, device = device, dtype = dtype)) # store W^T
         stdev = (2 / (in_features + out_features)) ** 0.5
         torch.nn.init.trunc_normal_(self.weight, mean = 0, std = stdev, a = -3 * stdev, b = 3 * stdev)
     
@@ -16,17 +16,21 @@ class Linear(nn.Module):
         return x @ self.weight.T
 
 class Embedding(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, device = None, dtype = None):
+    def __init__(self, num_embeddings, embedding_dim, device = None, dtype = torch.float32):
         super().__init__()
         self.vocab_size = num_embeddings
         self.matrix = nn.Parameter(torch.zeros(num_embeddings, embedding_dim, device = device, dtype = dtype))
         torch.nn.init.trunc_normal_(self.matrix, mean = 0, std = 1, a = -3, b = 3)
     
     def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        if token_ids.dtype != torch.long:
+            token_ids = token_ids.to(torch.long)
         # ensure types are correct
-        one_hot = nn.functional.one_hot(token_ids, num_classes = self.vocab_size)
-        one_hot = one_hot.to(self.matrix.dtype)
-        return one_hot @ self.matrix
+        # one_hot = nn.functional.one_hot(token_ids, num_classes = self.vocab_size)
+        # one_hot = one_hot.to(self.matrix.dtype)
+        embeddings = self.matrix[token_ids]
+
+        return embeddings
 
 class RMSNorm(nn.Module):
     def __init__(self, d_model: int, eps: float = 1e-5, device = None, dtype = None):
@@ -86,7 +90,7 @@ class SwiGLU(nn.Module):
         return result
 
 class RoPE(nn.Module):
-    def __init__(self, theta: float, d_k: int, max_seq_len: int, device = None):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device = None, dtype = torch.float32):
         super().__init__()
         self.theta = theta
         self.d_k = d_k
@@ -94,10 +98,10 @@ class RoPE(nn.Module):
 
         # compute cos and sin values
         # theta_i_k has shape (max_seq_len, d_k // 2)
-        idx = torch.arange(0, max_seq_len, device = device, dtype = torch.float32)
+        idx = torch.arange(0, max_seq_len, device = device, dtype = dtype)
        
         # note that it's 0-indexed even though the formula says 1-indexed in the handout!
-        denom = theta ** (torch.arange(0, d_k, 2, device = device, dtype = torch.float32) / d_k)
+        denom = theta ** (torch.arange(0, d_k, 2, device = device, dtype = dtype) / d_k)
         theta_i_k = idx.unsqueeze(1) / denom.unsqueeze(0)
         
         cos_cache = torch.cos(theta_i_k)
@@ -146,14 +150,14 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     offset = torch.max(x, dim = dim, keepdim = True)[0]
 
     # subtract offset
-    x = x - offset
+    numerator = x - offset
 
     # apply softmax along dimension dim
-    x = torch.exp(x)
+    numerator = torch.exp(numerator)
     # not everything needs to be einops
-    x /= torch.sum(x, dim = dim, keepdim = True)
+    denominator = torch.sum(numerator, dim = dim, keepdim = True)
     
-    return x
+    return numerator / denominator
 
 def scaled_dot_product_attention(Q: Float[torch.Tensor, "... seq_len_q d_k"], 
                                  K: Float[torch.Tensor, "... seq_len_k d_k"], 
