@@ -255,6 +255,8 @@ def main(args = None):
     # set cosine annealing by default
     args.alpha_max = args.lr
     args.alpha_min = args.lr / 10
+    args.n_iter = 128 * 256 * 10000 / (args.batch_size * args.seq_len)
+    args.n_iter = int(args.n_iter)
     args.T_w = args.n_iter // 20
     args.T_c = args.n_iter
 
