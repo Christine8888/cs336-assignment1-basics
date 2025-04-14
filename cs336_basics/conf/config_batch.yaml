@@ -1,0 +1,25 @@
+defaults:
+  - override hydra/launcher: submitit_slurm
+
+# command line arguments
+train_args:
+  lr: 0.001
+  batch_size: 128
+  n_iter: 10000
+  device: cuda
+
+# submitit settings
+hydra:
+  launcher:
+    partition: a1-batch
+    qos: a1-batch-qos
+    timeout_min: 120
+    gpus_per_node: 1
+    cpus_per_task: 8
+    max_num_timeout: 0
+    array_parallelism: 8
+
+  sweeper:
+    params:
+      train_args.batch_size: 1,64,512
+      train_args.n_iter: 1280000,20000,2500

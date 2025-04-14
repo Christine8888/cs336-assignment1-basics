@@ -66,6 +66,8 @@ def load_data(x: np.array, batch_size: int, seq_len: int, device: str, dtype: to
     # assume x is of shape length x 1
     length = x.shape[0]
     start_indices = random.sample(range(0, length - seq_len), batch_size)
+    # use the next line to debug on a single minibatch
+    # start_indices = np.arange(0, batch_size)
     batch = np.zeros((batch_size, seq_len))
     targets = np.zeros((batch_size, seq_len))
     
