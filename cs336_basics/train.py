@@ -161,7 +161,9 @@ class TransformerTrainer:
             # compute final loss/perplexity
             valid_loss = self.validate(i)
             f.write(f"Final validation loss: {valid_loss}\n")
-    
+
+            save_path = os.path.join(self.checkpoint_dir, f"checkpoint_final.pt")
+            train_utils.save_checkpoint(self.model, self.optim, i, save_path)
     def validate(self, step):
         with torch.no_grad():
             self.model.eval()
