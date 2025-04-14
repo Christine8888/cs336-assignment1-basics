@@ -1,5 +1,4 @@
-
-from . import layers
+import cs336_basics.layers as layers
 import torch.nn as nn
 import torch
 
