@@ -221,6 +221,9 @@ def parse_arguments():
             for key, value in config.items():
                 setattr(args, key, value)
     
+    args.alpha_max = args.lr
+    args.alpha_min = args.lr / 10
+
     return args
 
 
