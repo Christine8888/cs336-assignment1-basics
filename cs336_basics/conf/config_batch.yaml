@@ -21,4 +21,5 @@ hydra:
 
   sweeper:
     params:
-      train_args.batch_size: 1,64,128,512
+      train_args.batch_size: 1,64,512
+      train_args.n_iter: 1280000,20000,2500

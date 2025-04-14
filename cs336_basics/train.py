@@ -222,9 +222,6 @@ def parse_arguments():
             for key, value in config.items():
                 setattr(args, key, value)
     
-    args.alpha_max = args.lr
-    args.alpha_min = args.lr / 10
-
     return args
 
 
@@ -233,6 +230,12 @@ def main(args = None):
         args = parse_arguments()
     dtype = torch.float32
     
+    # set cosine annealing by default
+    args.alpha_max = args.lr
+    args.alpha_min = args.lr / 10
+    args.T_w = args.n_iter // 20
+    args.T_c = args.n_iter
+
     # make parameter dictionaries
     transformer_params = {
         "d_model": args.d_model,
