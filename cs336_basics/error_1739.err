@@ -1,7 +1,0 @@
-Downloading cpython-3.13.3-linux-x86_64-gnu (20.3MiB)
- Downloaded cpython-3.13.3-linux-x86_64-gnu
-Using CPython 3.13.3
-Creating virtual environment at: /home/c-cye/assignment1-basics/.venv
-   Building cs336-basics @ file:///home/c-cye/assignment1-basics
-      Built cs336-basics @ file:///home/c-cye/assignment1-basics
-Installed 62 packages in 16.04s
