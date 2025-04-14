@@ -10,7 +10,7 @@ import time
 import argparse
 import json
 
-DATA_DIR = "../data_tokenized"
+DATA_DIR = "/home/c-cye/assignment1-basics/data_tokenized"
 # DATA_DIR = "/users/christineye/cs336/assignment1-basics/data"
 
 class TransformerTrainer:
@@ -209,8 +209,10 @@ def parse_arguments():
     parser.add_argument('--load_from', type=str, default=None, help='Load checkpoint from file')
     parser.add_argument('--config', type=str, default=None, help='Config file path (overrides command line args)')
     
-    args = parser.parse_args()
-    
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        print(f"Warning: Ignoring unrecognized arguments: {unknown}")
+
     # if config file is provided, load it
     if args.config is not None:
         with open(args.config, 'r') as f:
@@ -222,8 +224,9 @@ def parse_arguments():
     return args
 
 
-def main():
-    args = parse_arguments()
+def main(args = None):
+    if args is None:
+        args = parse_arguments()
     dtype = torch.float32
     
     # make parameter dictionaries
