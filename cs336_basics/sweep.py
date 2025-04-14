@@ -6,7 +6,7 @@ import os
 @hydra.main(config_path="conf", config_name="config")
 def run_sweep(cfg: DictConfig):
     # Create command line arguments from config
-    cmd = ["python", "train.py"]
+    cmd = ["uv", "run", "python", "train.py"]
     
     for k, v in cfg.train_args.items():
         cmd.extend([f"--{k}", str(v)])
