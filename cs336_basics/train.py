@@ -10,6 +10,7 @@ import time
 import argparse
 import json
 
+log_wandb = True
 DATA_DIR = "/home/c-cye/assignment1-basics/data_tokenized"
 # DATA_DIR = "/users/christineye/cs336/assignment1-basics/data"
 
@@ -81,7 +82,7 @@ class TransformerTrainer:
             self.load_data()
         
         # setup wandb
-        self.setup_wandb()
+        if log_wandb: self.setup_wandb()
         
         # train loop
         for i in range(self.training_params["n_iter"]):
@@ -112,7 +113,7 @@ class TransformerTrainer:
             self.optim.zero_grad()
             self.total_tokens += self.training_params["batch_size"] * self.training_params["seq_len"]
             # log to wandb
-            wandb.log({
+            if log_wandb: wandb.log({
                 "loss": loss.item(),
                 "learning_rate": self.optim.param_groups[0]["lr"],
                 "grad_norm": grad_norm,
@@ -132,7 +133,7 @@ class TransformerTrainer:
                 self.validate(i)
         
         # finish wandb logging
-        wandb.finish()
+        if log_wandb: wandb.finish()
         
         # save final results to .txt
         with open(f"results_{self.run_id}.txt", "w") as f:
@@ -163,7 +164,7 @@ class TransformerTrainer:
             valid_loss /= self.training_params["n_valid_batches"]
             perplexity = np.exp(valid_loss)
             
-        wandb.log({
+        if log_wandb: wandb.log({
             "valid_loss": valid_loss,
             "valid_perplexity": perplexity,
             "step": step,
