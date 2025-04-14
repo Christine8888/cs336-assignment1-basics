@@ -57,6 +57,23 @@ class RMSNorm(nn.Module):
 def silu(x: torch.Tensor) -> torch.Tensor:
     return x * torch.sigmoid(x)
 
+class SiLU(nn.Module):
+    def __init__(self, d_model, d_ff, device = None, dtype = None):
+        super().__init__()
+        
+        self.W1 = nn.Parameter(torch.zeros(d_ff, d_model, device = device, dtype = dtype))
+        self.W2 = nn.Parameter(torch.zeros(d_model, d_ff, device = device, dtype = dtype))
+        stdev = (2 / (d_ff + d_model)) ** 0.5
+        torch.nn.init.trunc_normal_(self.W1, mean = 0, std = stdev, a = -3 * stdev, b = 3 * stdev)
+        torch.nn.init.trunc_normal_(self.W2, mean = 0, std = stdev, a = -3 * stdev, b = 3 * stdev)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute W2(SiLU(W1(x)))"""
+        w1x = einops.einsum(x, self.W1, "... d_model, d_ff d_model -> ... d_ff")
+        z = silu(w1x)
+        result = einops.einsum(z, self.W2, "... d_ff, d_model d_ff -> ... d_model")
+        return result
+
 class SwiGLU(nn.Module):
     def __init__(self, d_model, d_ff = None, device = None, dtype = None):
         """Layers have the following shapes:

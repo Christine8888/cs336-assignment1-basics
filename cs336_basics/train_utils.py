@@ -48,7 +48,7 @@ def gradient_clipping(params, max_l2, eps = 1e-6):
     
     l2_norm = torch.norm(grads_flat, 2)
     if l2_norm <= max_l2:
-        return
+        return l2_norm
     else:
         coef = max_l2 / (l2_norm + eps)
         for g in grad:
