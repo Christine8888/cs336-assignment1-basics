@@ -7,7 +7,7 @@ import argparse
 # Import parse_arguments and main from train
 from train import parse_arguments, main
 
-@hydra.main(config_path="conf", config_name="config_lr")
+@hydra.main(config_path="conf", config_name="config_batch")
 def run_sweep(cfg: DictConfig):
     print(f"Working directory: {os.getcwd()}")
     
