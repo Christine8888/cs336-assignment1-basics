@@ -1,5 +1,0 @@
-train_args:
-  lr: 0.001
-  batch_size: 128
-  epochs: 10000
-  device: cuda

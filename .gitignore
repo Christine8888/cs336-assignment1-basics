@@ -4,6 +4,8 @@ data/
 data_tokenized/
 *.err
 *.out
+cs336_basics/outputs
+cs336_basics/multirun
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
