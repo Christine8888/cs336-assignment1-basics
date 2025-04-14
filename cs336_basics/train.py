@@ -65,7 +65,7 @@ class TransformerTrainer:
         # initialize wandb logging
         wandb.init(
             project="cs336-basics", 
-            name=f"run_{self.run_id}_{self.training_params['dataset']}_{self.training_params['run_name']}", 
+            name=f"run_{self.run_id}_{self.training_params['run_name']}", 
             config={
                 "transformer_params": self.transformer_params,
                 "adamw_params": self.adamw_params,
