@@ -30,10 +30,28 @@ class TransformerTrainer:
         self.train_path = os.path.join(self.data_dir, f"{training_params['dataset']}_tokenized-train.npy")
         self.valid_path = os.path.join(self.data_dir, f"{training_params['dataset']}_tokenized-valid.npy")
         
-        # initialize model
-        self.model = transformer.TransformerLM(**self.transformer_params, 
-                                              device=self.training_params["device"], 
-                                              dtype=self.training_params["dtype"])
+        # initialize model, including ablations
+        if self.training_params["ablation"] == "no_layernorm":
+            self.model = transformer.TransformerLMNoRMSNorm(**self.transformer_params, 
+                                                          device=self.training_params["device"], 
+                                                          dtype=self.training_params["dtype"])
+        elif self.training_params["ablation"] == "postnorm":
+            self.model = transformer.TransformerLMPostNorm(**self.transformer_params, 
+                                                        device=self.training_params["device"], 
+                                                        dtype=self.training_params["dtype"])
+        elif self.training_params["ablation"] == "nope":
+            self.model = transformer.TransformerLMNoPE(**self.transformer_params, 
+                                                    device=self.training_params["device"], 
+                                                    dtype=self.training_params["dtype"])
+        elif self.training_params["ablation"] == "silu":
+            # d_ff is overridden to be d_model * 4
+            self.model = transformer.TransformerLMSiLU(**self.transformer_params, 
+                                                        device=self.training_params["device"], 
+                                                        dtype=self.training_params["dtype"])
+        else:
+            self.model = transformer.TransformerLM(**self.transformer_params, 
+                                                  device=self.training_params["device"], 
+                                                  dtype=self.training_params["dtype"])
         
         # initialize optimizer
         self.optim = optimizer.AdamW(self.model.parameters(), 
@@ -208,6 +226,8 @@ def parse_arguments():
     parser.add_argument('--run_name', type=str, default='default', help='Run name for wandb')
     parser.add_argument('--load_from', type=str, default=None, help='Load checkpoint from file')
     parser.add_argument('--config', type=str, default=None, help='Config file path (overrides command line args)')
+
+    parser.add_argument('--ablation', type=str, default=None, help='Ablation study to run')
     
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -220,9 +240,6 @@ def parse_arguments():
             # update args with config values
             for key, value in config.items():
                 setattr(args, key, value)
-    
-    args.alpha_max = args.lr
-    args.alpha_min = args.lr / 10
 
     return args
 
@@ -265,6 +282,7 @@ def main(args = None):
         "T_c": args.T_c,
         "dataset": args.dataset,
         "run_name": args.run_name,
+        "ablation": args.ablation,
     }
     
     print('Training with parameters:')

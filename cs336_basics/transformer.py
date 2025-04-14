@@ -45,15 +45,11 @@ class TransformerLM(nn.Module):
         return h
 
 """Ablation Study: removing RMSNorm"""
-class TransformerBlockNoRMSNorm(nn.Module):
+class TransformerBlockNoRMSNorm(TransformerBlock):
     def __init__(self, d_model: int, num_heads: int, d_ff: int, rope: nn.Module = None, **kwargs):
-        super().__init__()
-        self.d_model = d_model
-        self.num_heads = num_heads
-        self.rope = rope
-        self.attn = layers.MultiHeadSelfAttention(d_model, num_heads, rope = rope, **kwargs)
-        self.ffn = layers.SwiGLU(d_model, d_ff, **kwargs)
+        super().__init__(d_model, num_heads, d_ff, rope, **kwargs)
 
+    # we only need to override the forward pass
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h = x + self.attn(x)
         h = h + self.ffn(h)
@@ -62,6 +58,7 @@ class TransformerBlockNoRMSNorm(nn.Module):
 class TransformerLMNoRMSNorm(TransformerLM):
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
+        # rebuild blocks with no RMSNorm
         self.layers = nn.Sequential(*[
             TransformerBlockNoRMSNorm(d_model, num_heads, d_ff, self.rope, **kwargs)
             for _ in range(num_layers)
@@ -75,20 +72,21 @@ class TransformerLMNoRMSNorm(TransformerLM):
         return h
 
 """Ablation Study: post-norm vs pre-norm"""
-class TransformerBlockPreNorm(TransformerBlock):
+class TransformerBlockPostNorm(TransformerBlock):
     def __init__(self, d_model: int, num_heads: int, d_ff: int, rope: nn.Module = None, **kwargs):
         super().__init__(d_model, num_heads, d_ff, rope, **kwargs)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # only override the forward pass
         h = self.ln1(x + self.attn(x))
         h = self.ln2(h + self.ffn(h))
         return h
 
-class TransformerLMPreNorm(TransformerLM):
+class TransformerLMPostNorm(TransformerLM):
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
         self.layers = nn.Sequential(*[
-            TransformerBlockPreNorm(d_model, num_heads, d_ff, self.rope, **kwargs)
+            TransformerBlockPostNorm(d_model, num_heads, d_ff, self.rope, **kwargs)
             for _ in range(num_layers)
         ])
 
@@ -97,6 +95,7 @@ class TransformerLMNoPE(TransformerLM):
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
         self.rope = None
+        # rebuild blocks with no positional embeddings
         self.layers = nn.Sequential(*[
             TransformerBlock(d_model, num_heads, d_ff, self.rope, **kwargs)
             for _ in range(num_layers)
@@ -106,9 +105,10 @@ class TransformerLMNoPE(TransformerLM):
 class TransformerBlockSiLU(TransformerBlock):
     def __init__(self, d_model: int, num_heads: int, d_ff: int, rope: nn.Module = None, **kwargs):
         super().__init__(d_model, num_heads, d_ff, rope, **kwargs)
-        self.ffn = layers.SiLU(d_model, d_ff, **kwargs)
+        # override d_ff with d_model * 4
+        self.ffn = layers.SiLU(d_model, d_model * 4, **kwargs)
 
-class TransformerLMNoSiLU(TransformerLM):
+class TransformerLMSiLU(TransformerLM):
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
         self.layers = nn.Sequential(*[
