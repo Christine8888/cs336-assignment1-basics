@@ -16,3 +16,9 @@ hydra:
     timeout_min: 120
     gpus_per_node: 1
     cpus_per_task: 8
+    max_num_timeout: 0
+    array_parallelism: 8
+
+  sweeper:
+    params:
+      train_args.lr: 0.0005,0.001,0.005,0.01,0.05,0.1
