@@ -10,7 +10,8 @@ import time
 import argparse
 import json
 
-DATA_DIR = "/users/christineye/cs336/assignment1-basics/data"
+DATA_DIR = "../data_tokenized"
+# DATA_DIR = "/users/christineye/cs336/assignment1-basics/data"
 
 class TransformerTrainer:
     def __init__(self, transformer_params, adamw_params, training_params, load_from=None):
@@ -52,8 +53,8 @@ class TransformerTrainer:
     
     def load_data(self):
         # load data memory-efficiently
-        self.train_data = np.load(self.train_path, mmap_mode='r').astype(np.uint16)
-        self.valid_data = np.load(self.valid_path, mmap_mode='r').astype(np.uint16)
+        self.train_data = np.load(self.train_path, mmap_mode='r', allow_pickle = True).astype(np.uint16)
+        self.valid_data = np.load(self.valid_path, mmap_mode='r', allow_pickle = True).astype(np.uint16)
         
         print('loaded data')
         
@@ -198,7 +199,7 @@ def parse_arguments():
     parser.add_argument('--seq_len', type=int, default=256, help='Sequence length')
     parser.add_argument('--device', type=str, default='cpu', help='Device (cpu or cuda)')
     parser.add_argument('--n_valid_batches', type=int, default=10, help='Number of validation batches')
-    parser.add_argument('--valid_every', type=int, default=1000, help='Validate every N iterations')
+    parser.add_argument('--valid_every', type=int, default=100, help='Validate every N iterations')
     parser.add_argument('--alpha_max', type=float, default=1e-3, help='Maximum learning rate for cosine annealing')
     parser.add_argument('--alpha_min', type=float, default=1e-4, help='Minimum learning rate for cosine annealing')
     parser.add_argument('--T_w', type=int, default=100, help='Warmup period for cosine annealing')
@@ -264,6 +265,7 @@ def main():
     print(transformer_params)
     print(adamw_params)
     print(training_params)
+
     # create trainer instance
     trainer = TransformerTrainer(
         transformer_params=transformer_params,

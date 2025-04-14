@@ -1,6 +1,7 @@
 cs336_basics/checkpoints
 cs336_basics/wandb
 data/
+data_tokenized/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

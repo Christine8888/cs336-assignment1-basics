@@ -9,7 +9,7 @@ import multiprocessing
 from functools import partial
 import os
 import cProfile
-from . import bpe
+import cs336_basics.bpe as bpe
 
 MULTI = 32 #max(multiprocessing.cpu_count() - 1, 1)
 CHUNK_SIZE = 10_000_000
@@ -74,8 +74,8 @@ class Tokenizer():
                 merged = self.encode_word_from_merges(word)
                 encoded.extend([self.token_to_id[b] for b in merged])
             
-            if i % 1000000 == 0:
-                print(f"encoded {i}/{n_words} words")
+            #if i % 1000000 == 0:
+                #print(f"encoded {i}/{n_words} words")
         
         return encoded
     
@@ -321,14 +321,14 @@ def tokenize_corpus(files = 'openwebtext', data_path = '../data/owt_', split = '
     print([tokenizer.decode([id]) for id in tokenized_text[:1000]])
 
     # save file
-    with open(f"../data/{files}_tokenized-{split}.npy", "wb") as f:
+    with open(f"../data_tokenized/{files}_tokenized-{split}.npy", "wb") as f:
         np.save(f, tokenized_text)
     
     end_time = time.time()
     print(f"total time: {end_time - start_time} seconds")
     # total_bytes = len(tokenizer.decode(tokenized_text).encode('utf-8'))
     # get file size
-    total_bytes = os.path.getsize(f"../data/{files}_tokenized-{split}.npy")
+    total_bytes = os.path.getsize(f"../data_tokenized/{files}_tokenized-{split}.npy")
     print(f"total bytes: {total_bytes}")
     print(f"throughput: {total_bytes / (end_time - start_time)} bytes per second")
     return tokenized_text
@@ -336,10 +336,10 @@ def tokenize_corpus(files = 'openwebtext', data_path = '../data/owt_', split = '
 if __name__ == "__main__":
     # test_tokenizer(files = 'tinystories', data_path = '../data/TinyStoriesV2-GPT4-valid.txt')
     # test_tokenizer(files = 'openwebtext', data_path = '../data/owt_valid.txt')
-    tokenize_corpus(files = 'tinystories', data_path = '../data/TinyStoriesV2-GPT4-', split = 'valid')
-    tokenize_corpus(files = 'tinystories', data_path = '../data/TinyStoriesV2-GPT4-', split = 'train')
-    tokenize_corpus(files = 'openwebtext', data_path = '../data/owt_', split = 'valid')
-    tokenize_corpus(files = 'openwebtext', data_path = '../data/owt_', split = 'train')
+    tokenize_corpus(files = 'tinystories', data_path = '/data/a1-basics/TinyStoriesV2-GPT4-', split = 'valid')
+    tokenize_corpus(files = 'tinystories', data_path = '/data/a1-basics/TinyStoriesV2-GPT4-', split = 'train')
+    tokenize_corpus(files = 'openwebtext', data_path = '/data/a1-basics/owt_', split = 'valid')
+    tokenize_corpus(files = 'openwebtext', data_path = '/data/a1-basics/owt_', split = 'train')
 
     # # run with cprofile
     # cProfile.run('tokenize_corpus(files = "tinystories", split = "valid")', 'tokenizer_stats')
