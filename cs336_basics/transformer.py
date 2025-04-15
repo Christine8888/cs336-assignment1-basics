@@ -115,3 +115,19 @@ class TransformerLMSiLU(TransformerLM):
             TransformerBlockSiLU(d_model, num_heads, d_ff, self.rope, **kwargs)
             for _ in range(num_layers)
         ])
+
+class TransformerLMWeightTying(TransformerLM):
+    def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
+        super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
+
+        # implement weight tying
+        embedding_params = nn.Parameter(torch.zeros(vocab_size, d_model), device = self.device, dtype = self.dtype)
+
+        # initialize
+        stdev = (1 / (vocab_size + d_model)) ** 0.5
+        torch.nn.init.trunc_normal_(embedding_params, mean = 0, std = stdev, a = -3 * stdev, b = 3 * stdev)
+
+        # tie weights, forward pass should be taken care of
+        self.embedding.matrix = embedding_params
+        self.lm_head.weight = embedding_params
+    

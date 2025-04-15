@@ -49,11 +49,18 @@ class TransformerTrainer:
             self.model = transformer.TransformerLMSiLU(**self.transformer_params, 
                                                         device=self.training_params["device"], 
                                                         dtype=self.training_params["dtype"])
+        elif self.training_params["ablation"] == "weight_tying":
+            self.model = transformer.TransformerLMWeightTying(**self.transformer_params, 
+                                                            device=self.training_params["device"], 
+                                                            dtype=self.training_params["dtype"])
         else:
             self.model = transformer.TransformerLM(**self.transformer_params, 
                                                   device=self.training_params["device"], 
                                                   dtype=self.training_params["dtype"])
         
+        # compile
+        self.model = torch.compile(self.model)
+
         # initialize optimizer
         self.optim = optimizer.AdamW(self.model.parameters(), 
                                     **self.adamw_params, 
@@ -105,6 +112,8 @@ class TransformerTrainer:
         
         # train loop
         for i in range(self.training_params["n_iter"]):
+            iter_start = time.time()
+
             batch, targets = train_utils.load_data(
                 self.train_data, 
                 self.training_params["batch_size"], 
@@ -138,6 +147,7 @@ class TransformerTrainer:
                 "grad_norm": grad_norm,
                 "step": i,
                 "wallclock": time.time() - self.start_time,
+                "tok/s": self.training_params["batch_size"] * self.training_params["seq_len"] / (time.time() - iter_start),
             })
             
             print(f"Step {i} loss: {loss.item()}")
@@ -191,6 +201,7 @@ class TransformerTrainer:
             "valid_perplexity": perplexity,
             "step": step,
             "total tokens": self.total_tokens,
+            "wallclock": time.time() - self.start_time,
         })
         print(valid_loss)
         
@@ -218,6 +229,7 @@ def parse_arguments():
     
     # training parameters
     parser.add_argument('--n_iter', type=int, default=10000, help='Number of training iterations')
+    parser.add_argument('--n_tokens', type=int, default=None, help='Number of tokens to train on')
     parser.add_argument('--checkpoint_every', type=int, default=1000, help='Save checkpoint every N iterations')
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
     parser.add_argument('--seq_len', type=int, default=256, help='Sequence length')
@@ -232,7 +244,6 @@ def parse_arguments():
     parser.add_argument('--run_name', type=str, default='default', help='Run name for wandb')
     parser.add_argument('--load_from', type=str, default=None, help='Load checkpoint from file')
     parser.add_argument('--config', type=str, default=None, help='Config file path (overrides command line args)')
-
     parser.add_argument('--ablation', type=str, default=None, help='Ablation study to run')
     
     args, unknown = parser.parse_known_args()
@@ -258,8 +269,12 @@ def main(args = None):
     # set cosine annealing by default
     args.alpha_max = args.lr
     args.alpha_min = args.lr / 10
-    args.n_iter = 128 * 256 * 10000 / (args.batch_size * args.seq_len)
-    args.n_iter = int(args.n_iter)
+
+    if args.n_tokens is not None:
+        # default value: 128 * 256 * 10000
+        args.n_iter = args.n_tokens // (args.batch_size * args.seq_len)
+        args.n_iter = int(args.n_iter)
+
     args.T_w = args.n_iter // 20
     args.T_c = args.n_iter
 

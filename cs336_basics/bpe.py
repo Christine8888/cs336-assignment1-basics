@@ -204,7 +204,7 @@ class BPE():
 
         if string:
             #return byte_tuple
-            result = b','.join(byte_tuple)
+            result = b'\x00'.join(byte_tuple)
             return result
 
         if flattened:
@@ -214,7 +214,7 @@ class BPE():
     
     def update(self):
         # select best merge. just doing dumb max works
-        
+
         merge_pair, counts = max(self.pairs.items(), key = lambda x: (x[1], self.pair_strings[x[0]]))
         # while self.pair_heap:
         #     neg_count, neg_string_priority, merge_pair = heapq.heappop(self.pair_heap)

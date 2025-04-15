@@ -1,0 +1,32 @@
+defaults:
+  - override hydra/launcher: submitit_slurm
+
+# command line arguments
+train_args:
+  device: cuda
+  vocab_size: 32000
+  dataset: openwebtext
+  checkpoint_every: 5000
+  valid_every: 100
+  n_tokens: 32768000
+  ablation: weight_tying
+
+# submitit settings
+hydra:
+  launcher:
+    partition: a1-batch
+    qos: a1-batch-qos
+    timeout_min: 90
+    gpus_per_node: 1
+    cpus_per_task: 8
+    max_num_timeout: 0
+    array_parallelism: 16
+  
+  sweep:
+    dir: multirun/openwebtext
+    subdir: ${hydra.job.override_dirname}
+  
+  sweeper:
+    params:
+      train_args.batch_size: 32,64,128,256
+      train_args.lr: 0.001,0.005,0.01
