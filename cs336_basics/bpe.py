@@ -11,6 +11,7 @@ from pstats import SortKey
 import pickle
 import os
 import heapq
+import pdb
 
 N_BYTES = 256
 BASE_PATH = "/users/christineye/cs336/assignment1-basics"
@@ -77,9 +78,11 @@ def chunk_documents(path: str, n_workers: int, special_tokens: list[str] = None)
             yield chunk
             position = f.tell()
 
-def invert_string(s: str) -> str:
-    return ''.join(chr(255 - ord(c)) for c in s)
-
+def invert_string(s: bytes) -> bytes:
+    return s
+    # inv_bytes = bytes([255 - c for c  in s])
+    return inv_bytes
+    
 
 """Byte-Pair Encoding (BPE) tokenizer"""
 class BPE():
@@ -143,7 +146,6 @@ class BPE():
         for i, token in enumerate(special_tokens):
             self.vocabulary[N_BYTES + i] = token.encode('utf-8')
         self.size = N_BYTES + len(special_tokens)
-        self.sorted_vocabulary = sorted(self.vocabulary.items(), key = lambda x: len(x[1]), reverse = True)
         
         # with open(input_path, 'rb') as f:
         #     chunks = chunk_file(f, MULTI, "<|endoftext|>".encode("utf-8"))
@@ -179,14 +181,11 @@ class BPE():
                 
                 for pair, locations in local_locations.items():
                     self.locations[pair].update(locations)
-        
-        # dump pairs to _{MULTI}_pairs.json
-        with open(f"test_{MULTI}_counts.json", "w") as f:
-            json.dump(self.counts, f)
 
         for pair, count in self.pairs.items():
             if pair not in self.pair_strings:
-                self.pair_strings[pair] = invert_string(self.decode_pair(pair, string=True))
+                self.pair_strings[pair] = invert_string(self.decode_pair(pair, string = True))
+            
             heapq.heappush(self.pair_heap, (-count, self.pair_strings[pair], pair))
 
         end = time.time()
@@ -198,9 +197,15 @@ class BPE():
         return list(word_bytes)
         
     def decode_pair(self, pair, string = True, flattened = False):
+        # the criminal thing is, python stores strings differently depending on its contents
+        # so strings cannot be easily "inverted" -- you have to invert the bytes
+
         byte_tuple = (self.vocabulary[pair[0]], self.vocabulary[pair[1]])
+
         if string:
-            return str((byte_tuple[0], byte_tuple[1]))
+            #return byte_tuple
+            result = b','.join(byte_tuple)
+            return result
 
         if flattened:
             byte_tuple = b''.join(byte_tuple)
@@ -208,24 +213,24 @@ class BPE():
         return byte_tuple
     
     def update(self):
-        # select best merge
-        # merge_pair, count = max(self.pairs.items(), key=lambda x: (x[1], self.pair_strings[x[0]]))
+        # select best merge. just doing dumb max works
         
-        while self.pair_heap:
-            neg_count, neg_string_priority, merge_pair = heapq.heappop(self.pair_heap)
-            count = -neg_count
+        merge_pair, counts = max(self.pairs.items(), key = lambda x: (x[1], self.pair_strings[x[0]]))
+        # while self.pair_heap:
+        #     neg_count, neg_string_priority, merge_pair = heapq.heappop(self.pair_heap)
+        #     count = -neg_count
             
-            # check pair validity
-            if merge_pair in self.pairs and self.pairs[merge_pair] == count:
-                break
-            elif merge_pair in self.pairs:
-                # update count (lazily)
-                heapq.heappush(self.pair_heap, (-self.pairs[merge_pair], 
-                                               neg_string_priority, 
-                                               merge_pair))
-        else:
-            # no valid pairs found
-            return False
+        #     # check pair validity
+        #     if merge_pair in self.pairs and self.pairs[merge_pair] == count:
+        #         break
+        #     elif merge_pair in self.pairs:
+        #         # update count (lazily)
+        #         heapq.heappush(self.pair_heap, (-self.pairs[merge_pair], 
+        #                                        neg_string_priority, 
+        #                                        merge_pair))
+        # else:
+        #     # no valid pairs found
+        #     return False
         
         
         # update vocabulary
@@ -285,12 +290,17 @@ class BPE():
                 heapq.heappush(self.pair_heap, (-self.pairs[new_pair], self.pair_strings[new_pair], new_pair))
 
         # track merge
-        byte_merge = self.decode_pair(merge_pair, string=False)
+        byte_merge = self.decode_pair(merge_pair, string = False)
         self.merges.append(byte_merge)
+        
+        if merge_pair in self.pairs:
+            del self.pairs[merge_pair]
 
 
     def train(self, vocab_size: int):
         while self.size < vocab_size and self.pairs:
+            # if len(self.merges) == 69:
+            #     pdb.set_trace()
             self.update()
         
         return self.vocabulary, self.merges
