@@ -12,7 +12,7 @@ train_args:
   valid_every: 100
   n_tokens: 3276800000
   ablation: weight_tying
-  run_name: leaderboard_scaling
+  run_name: leaderboard_full
   num_layers: 4
   d_model: 512
   d_ff_ratio: 4 
@@ -24,14 +24,14 @@ hydra:
   launcher:
     partition: a1-batch
     qos: a1-batch-qos
-    timeout_min: 30
+    timeout_min: 90
     gpus_per_node: 1
     cpus_per_task: 8
     max_num_timeout: 0
     array_parallelism: 10
   
   sweep:
-    dir: /data/c-cye/leaderboard_short
+    dir: multirun/leaderboard_90
     subdir: ${hydra.job.override_dirname}
   
   sweeper:
@@ -40,4 +40,4 @@ hydra:
       train_args.seq_len: 512
       train_args.context_length: 512
       train_args.num_layers: 4,6
-      train_args.d_model: 768,1024
+      train_args.d_model: 768

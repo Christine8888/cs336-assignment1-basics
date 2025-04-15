@@ -56,7 +56,7 @@ def gradient_clipping(params, max_l2, eps = 1e-6):
     
     return l2_norm
 
-def load_data(x: np.array, batch_size: int, seq_len: int, device: str, dtype: torch.dtype = torch.long) -> tuple[torch.Tensor, torch.Tensor]:
+def load_data(x: np.array, batch_size: int, seq_len: int, device: str, dtype: torch.dtype = torch.long, sample: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
     """Load a batch from the input array x, sampling sequences independently.
     x: input array of shape length x 1
     batch_size: number of sequences to sample
@@ -67,7 +67,8 @@ def load_data(x: np.array, batch_size: int, seq_len: int, device: str, dtype: to
     length = x.shape[0]
     start_indices = random.sample(range(0, length - seq_len), batch_size)
     # use the next line to debug on a single minibatch
-    # start_indices = np.arange(0, batch_size)
+    if not sample:
+        start_indices = np.arange(0, batch_size)
     batch = np.zeros((batch_size, seq_len))
     targets = np.zeros((batch_size, seq_len))
     

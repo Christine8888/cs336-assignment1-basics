@@ -121,7 +121,7 @@ class TransformerLMWeightTying(TransformerLM):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
 
         # implement weight tying
-        embedding_params = nn.Parameter(torch.zeros(vocab_size, d_model), device = self.device, dtype = self.dtype)
+        embedding_params = nn.Parameter(torch.zeros(vocab_size, d_model, **kwargs))
 
         # initialize
         stdev = (1 / (vocab_size + d_model)) ** 0.5

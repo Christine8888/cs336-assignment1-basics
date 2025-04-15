@@ -10,8 +10,9 @@ import time
 import argparse
 import json
 
-log_wandb = False
-DATA_DIR = "/home/c-cye/assignment1-basics/data_tokenized"
+log_wandb = True
+DATA_DIR = "/data/c-cye/data_tokenized"
+# DATA_DIR = "/home/c-cye/assignment1-basics/data_tokenized"
 # DATA_DIR = "/users/christineye/cs336/assignment1-basics/data"
 
 class TransformerTrainer:
@@ -60,7 +61,7 @@ class TransformerTrainer:
         
         # compile
         self.model = torch.compile(self.model)
-
+        torch.set_float32_matmul_precision('high')
         # initialize optimizer
         self.optim = optimizer.AdamW(self.model.parameters(), 
                                     **self.adamw_params, 
@@ -100,7 +101,6 @@ class TransformerTrainer:
                 "dataset": self.training_params['dataset'],
             }
         )
-        self.start_time = time.time()
     
     def train(self):
         # load data if not already loaded
@@ -109,7 +109,8 @@ class TransformerTrainer:
         
         # setup wandb
         if log_wandb: self.setup_wandb()
-        
+        self.start_time = time.time()
+
         # train loop
         for i in range(self.training_params["n_iter"]):
             iter_start = time.time()
@@ -118,7 +119,8 @@ class TransformerTrainer:
                 self.train_data, 
                 self.training_params["batch_size"], 
                 self.training_params["seq_len"], 
-                self.training_params["device"]
+                self.training_params["device"],
+                sample = self.training_params["sample"]
             )
             
             # set learning rate
@@ -201,7 +203,6 @@ class TransformerTrainer:
             "valid_perplexity": perplexity,
             "step": step,
             "total tokens": self.total_tokens,
-            "wallclock": time.time() - self.start_time,
         })
         print(valid_loss)
         
@@ -219,7 +220,8 @@ def parse_arguments():
     parser.add_argument('--num_layers', type=int, default=4, help='Number of transformer layers')
     parser.add_argument('--vocab_size', type=int, default=10000, help='Vocabulary size')
     parser.add_argument('--context_length', type=int, default=256, help='Maximum context length')
-    
+    parser.add_argument('--d_ff_ratio', type=float, default=None, help='Ratio of d_ff to d_model')
+
     # adamw parameters
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--beta1', type=float, default=0.9, help='AdamW beta1')
@@ -245,6 +247,8 @@ def parse_arguments():
     parser.add_argument('--load_from', type=str, default=None, help='Load checkpoint from file')
     parser.add_argument('--config', type=str, default=None, help='Config file path (overrides command line args)')
     parser.add_argument('--ablation', type=str, default=None, help='Ablation study to run')
+    parser.add_argument('--sample', action='store_true', default=True, help='Sample from dataloader?')
+    parser.add_argument('--no-sample', action='store_false', dest='sample', help="Don't sample from dataloader")
     
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -274,6 +278,9 @@ def main(args = None):
         # default value: 128 * 256 * 10000
         args.n_iter = args.n_tokens // (args.batch_size * args.seq_len)
         args.n_iter = int(args.n_iter)
+    
+    if args.d_ff_ratio is not None:
+        args.d_ff = args.d_model * args.d_ff_ratio
 
     args.T_w = args.n_iter // 20
     args.T_c = args.n_iter
@@ -312,6 +319,7 @@ def main(args = None):
         "dataset": args.dataset,
         "run_name": args.run_name,
         "ablation": args.ablation,
+        "sample": args.sample,
     }
     
     print('Training with parameters:')
@@ -328,8 +336,8 @@ def main(args = None):
     )
     
     # start training
-    print('Validating')
-    trainer.validate(0)
+    # print('Validating')
+    # trainer.validate(0)
     
     trainer.train()
 
