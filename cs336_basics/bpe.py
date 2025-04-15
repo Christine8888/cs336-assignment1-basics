@@ -33,7 +33,7 @@ def chunk_documents_streaming(
 
     with open(path, "r", encoding="utf-8") as f:
         while True:
-            # Read one chunk_size block of text
+            # read one chunk_size block of text
             block = f.read(chunk_size)
             if not block:
                 # no more data in file
@@ -79,14 +79,16 @@ def chunk_documents(path: str, n_workers: int, special_tokens: list[str] = None)
             position = f.tell()
 
 def invert_string(s: bytes) -> bytes:
+    """Invert a string of bytes."""
     return s
-    # inv_bytes = bytes([255 - c for c  in s])
+    inv_bytes = bytes([255 - c for c  in s])
     return inv_bytes
     
 
 """Byte-Pair Encoding (BPE) tokenizer"""
 class BPE():
     def process_chunk(self, text):
+        """Process a chunk of text."""
         # given a chunk of text
         # optimized counting
         text = re.split(self.special_pattern, text)
@@ -97,6 +99,7 @@ class BPE():
         return counts
 
     def process_chunk_from_boundaries(self, boundaries):
+        """Process a chunk of text given file location boundaries."""
         # optimized counting
         with open(self.input_path, 'rb') as f:
             start, end = boundaries
@@ -111,6 +114,7 @@ class BPE():
         return counts
 
     def process_vocab(self, words):
+        """Process pair counts and locations for a list of words."""
         local_pairs = defaultdict(int)
         local_locations = defaultdict(set)
 
@@ -128,6 +132,11 @@ class BPE():
         return local_pairs, local_locations
 
     def __init__(self, input_path: str, special_tokens: list[str] = None):
+        """Initialize BPE tokenizer.
+        
+        input_path: path to the input text file
+        special_tokens: list of special tokens
+        """
         # pre-compile regex
         self.pattern = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
         # build split pattern
@@ -147,10 +156,6 @@ class BPE():
             self.vocabulary[N_BYTES + i] = token.encode('utf-8')
         self.size = N_BYTES + len(special_tokens)
         
-        # with open(input_path, 'rb') as f:
-        #     chunks = chunk_file(f, MULTI, "<|endoftext|>".encode("utf-8"))
-        #     boundaries = zip(chunks[:-1], chunks[1:])
-
         # parallelize further steps
         start = time.time()
         with Pool(MULTI) as p:
@@ -163,7 +168,7 @@ class BPE():
                 for word, count in local_counts.items():
                     self.counts[word] += count
 
-        # don't need to parallize?
+        # get actual word count; faster to do without multiprocessing
         for word in self.counts.keys():
             self.words[word] = self.encode(word)
 
@@ -192,11 +197,21 @@ class BPE():
         print(f"Time taken: {end - start} seconds")
 
     def encode(self, word: str):
+        """Encode a string into a list of bytes."""
         word_bytes = word.encode('utf-8')
         
         return list(word_bytes)
         
     def decode_pair(self, pair, string = True, flattened = False):
+        """Decode a pair of vocabulary indices into a string or tuple.
+        
+        pair: pair of bytes
+        string: if string, return pair as a bytestring joined with b'\x00'
+        flattened: if flattened, return pair as a single bytestring with no delimiter
+        
+        Otherwise, return pair as a tuple of bytes.
+        """
+
         # the criminal thing is, python stores strings differently depending on its contents
         # so strings cannot be easily "inverted" -- you have to invert the bytes
 
@@ -213,9 +228,12 @@ class BPE():
         return byte_tuple
     
     def update(self):
-        # select best merge. just doing dumb max works
+        """Run one BPE merge."""
 
+        update_mode = "max"
         merge_pair, counts = max(self.pairs.items(), key = lambda x: (x[1], self.pair_strings[x[0]]))
+        
+        # note that using the heap is much faster but throws 1 error in the test cases due to Python string encodings
         # while self.pair_heap:
         #     neg_count, neg_string_priority, merge_pair = heapq.heappop(self.pair_heap)
         #     count = -neg_count
@@ -298,14 +316,21 @@ class BPE():
 
 
     def train(self, vocab_size: int):
+        """Train the BPE tokenizer until a given vocabulary size is reached.
+        
+        vocab_size: vocabulary size to reach
+        """
         while self.size < vocab_size and self.pairs:
-            # if len(self.merges) == 69:
-            #     pdb.set_trace()
             self.update()
         
         return self.vocabulary, self.merges
 
     def save_model(self, output_name):
+        """Save the BPE tokenizer to a file.
+        
+        output_name: stem for the output file; files will be named {output_name}_vocab.pkl and {output_name}_merges.pkl
+        """
+        
         serializable_vocab = {}
         for token_id, token_bytes in self.vocabulary.items():
             serializable_vocab[str(token_id)] = list(token_bytes)
@@ -345,6 +370,8 @@ def analyze_profile(name = 'bpe_stats', classname = 'BPE'):
     p.sort_stats(SortKey.CUMULATIVE).print_stats(classname)
 
 def train_tinystories():
+    """Train the BPE tokenizer on the TinyStories dataset."""
+
     data_path = BASE_PATH + "/data/TinyStoriesV2-GPT4-train.txt"
     tokenizer = BPE(data_path, special_tokens = ["<|endoftext|>"])
     vocab_size = 10000
@@ -354,6 +381,8 @@ def train_tinystories():
     tokenizer.save_model('tinystories')
 
 def train_openwebtext():
+    """Train the BPE tokenizer on the OpenWebText dataset."""
+    
     data_path = BASE_PATH + "/data/owt_train.txt" 
     tokenizer = BPE(data_path, special_tokens = ["<|endoftext|>"])
     vocab_size = 32000

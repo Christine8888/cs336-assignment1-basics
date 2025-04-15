@@ -8,12 +8,28 @@ device = 'cuda'
 dtype = torch.float32
 
 class LanguageModel():
+    """Language model and tokenizer together, for decoding text."""
+    
     def __init__(self, model, tokenizer):
+        """Initialize the language model and tokenizer.
+        
+        model: language model
+        tokenizer: tokenizer
+        """
         self.model = model
         self.tokenizer = tokenizer
     
     @classmethod
     def from_files(cls, transformer_params, state_filepath, vocab_filepath, merges_filepath, special_tokens = None):
+        """Initialize the language model and tokenizer from files.
+        
+        transformer_params: parameters for the transformer
+        state_filepath: path to the state dictionary
+        vocab_filepath: path to the vocabulary
+        merges_filepath: path to the merges
+        special_tokens: special tokens for tokenizer
+        """
+
         # read in pickle files
         tokenizer = tokenizer.Tokenizer.from_files(vocab_filepath = vocab_filepath,
                                                     merges_filepath = merges_filepath,
@@ -27,12 +43,20 @@ class LanguageModel():
     
     def decode(self, prompt = " ", max_tokens = 100, temperature = 1.0, top_p = 1.0):
         """Sample from language model, including prompting, temperature scaling, and top-p sampling.
-        Only allow sampling one sequence at a time; batching functionality is slightly more complicated"""
+        Only allow sampling one sequence at a time; batching functionality is slightly more complicated.
+        
+        prompt: prompt to decode from
+        max_tokens: maximum number of tokens to sample
+        temperature: temperature for softmax
+        top_p: sample only tokens that make up the top-p probability mass
+        """
+        
         prompt_str = prompt
         prompt_tokenized = torch.Tensor(self.tokenizer.encode(prompt)).to(device)
         eot_token = self.tokenizer.encode("<|endoftext|>")[0]
         n = 0
 
+        # break on EOT or max tokens
         while prompt_tokenized[-1] != eot_token and n < max_tokens:
             last_logits = self.model(prompt_tokenized.unsqueeze(0)).squeeze(0)[-1, :]
 

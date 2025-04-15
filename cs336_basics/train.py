@@ -16,7 +16,17 @@ DATA_DIR = "/data/c-cye/data_tokenized"
 # DATA_DIR = "/users/christineye/cs336/assignment1-basics/data"
 
 class TransformerTrainer:
+    """Training setup for a Transformer LM."""
     def __init__(self, transformer_params, adamw_params, training_params, load_from=None):
+        """
+        Initialize the TransformerTrainer.
+
+        Args:
+            transformer_params (dict): transformer parameters
+            adamw_params (dict): optimizer parameters
+            training_params (dict): training setup parameters
+            load_from (str, optional): path to load checkpoint from.
+        """
         self.transformer_params = transformer_params
         self.adamw_params = adamw_params
         self.training_params = training_params
@@ -62,6 +72,7 @@ class TransformerTrainer:
         # compile
         self.model = torch.compile(self.model)
         torch.set_float32_matmul_precision('high')
+        
         # initialize optimizer
         self.optim = optimizer.AdamW(self.model.parameters(), 
                                     **self.adamw_params, 
@@ -80,6 +91,9 @@ class TransformerTrainer:
         self.load_data()
 
     def load_data(self):
+        """
+        Set up memory-efficient dataloading.
+        """
         # load data memory-efficiently
         self.train_data = np.load(self.train_path, mmap_mode='r', allow_pickle = True).astype(np.uint16)
         self.valid_data = np.load(self.valid_path, mmap_mode='r', allow_pickle = True).astype(np.uint16)
@@ -90,7 +104,9 @@ class TransformerTrainer:
         assert np.max(self.valid_data) <= np.iinfo(np.uint16).max
     
     def setup_wandb(self):
-        # initialize wandb logging
+        """
+        Set up wandb logging.
+        """
         wandb.init(
             project="cs336-basics", 
             name=f"run_{self.run_id}_{self.training_params['run_name']}", 
@@ -103,6 +119,9 @@ class TransformerTrainer:
         )
     
     def train(self):
+        """
+        Train loop for the model.
+        """
         # load data if not already loaded
         if not hasattr(self, 'train_data'):
             self.load_data()
@@ -142,6 +161,7 @@ class TransformerTrainer:
             self.optim.step()
             self.optim.zero_grad()
             self.total_tokens += self.training_params["batch_size"] * self.training_params["seq_len"]
+            
             # log to wandb
             if log_wandb: wandb.log({
                 "loss": loss.item(),
@@ -179,12 +199,13 @@ class TransformerTrainer:
         train_utils.save_checkpoint(self.model, self.optim, i, save_path)
   
     def validate(self, step):
+        """Compute validation loss/perplexity."""
         with torch.no_grad():
             self.model.eval()
             valid_loss = 0.0
             
             for _ in range(self.training_params["n_valid_batches"]):
-                # compute validation loss/perplexity
+                # compute validation loss/perplexity, using same batch size and seq len as training
                 batch, targets = train_utils.load_data(
                     self.valid_data, 
                     self.training_params["batch_size"], 
@@ -238,10 +259,10 @@ def parse_arguments():
     parser.add_argument('--device', type=str, default='cpu', help='Device (cpu or cuda)')
     parser.add_argument('--n_valid_batches', type=int, default=10, help='Number of validation batches')
     parser.add_argument('--valid_every', type=int, default=100, help='Validate every N iterations')
-    parser.add_argument('--alpha_max', type=float, default=1e-3, help='Maximum learning rate for cosine annealing')
-    parser.add_argument('--alpha_min', type=float, default=1e-4, help='Minimum learning rate for cosine annealing')
-    parser.add_argument('--T_w', type=int, default=500, help='Warmup period for cosine annealing')
-    parser.add_argument('--T_c', type=int, default=10000, help='Cycle length for cosine annealing')
+    # parser.add_argument('--alpha_max', type=float, default=1e-3, help='Maximum learning rate for cosine annealing')
+    # parser.add_argument('--alpha_min', type=float, default=1e-4, help='Minimum learning rate for cosine annealing')
+    # parser.add_argument('--T_w', type=int, default=500, help='Warmup period for cosine annealing')
+    # parser.add_argument('--T_c', type=int, default=10000, help='Cycle length for cosine annealing')
     parser.add_argument('--dataset', type=str, default='tinystories', help='Dataset name')
     parser.add_argument('--run_name', type=str, default='default', help='Run name for wandb')
     parser.add_argument('--load_from', type=str, default=None, help='Load checkpoint from file')
@@ -268,11 +289,12 @@ def parse_arguments():
 def main(args = None):
     if args is None:
         args = parse_arguments()
-    dtype = torch.float32
     
     # set cosine annealing by default
     args.alpha_max = args.lr
     args.alpha_min = args.lr / 10
+    args.T_w = args.n_iter // 20
+    args.T_c = args.n_iter
 
     if args.n_tokens is not None:
         # default value: 128 * 256 * 10000
@@ -281,9 +303,6 @@ def main(args = None):
     
     if args.d_ff_ratio is not None:
         args.d_ff = args.d_model * args.d_ff_ratio
-
-    args.T_w = args.n_iter // 20
-    args.T_c = args.n_iter
 
     # make parameter dictionaries
     transformer_params = {
@@ -309,7 +328,7 @@ def main(args = None):
         "batch_size": args.batch_size,
         "seq_len": args.seq_len,
         "device": args.device,
-        "dtype": dtype,
+        "dtype": args.dtype,
         "n_valid_batches": args.n_valid_batches,
         "valid_every": args.valid_every,
         "alpha_max": args.alpha_max,
