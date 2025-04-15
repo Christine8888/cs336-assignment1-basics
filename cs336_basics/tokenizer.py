@@ -26,7 +26,6 @@ class Tokenizer():
             self.special_tokens = []
         else:
             self.special_tokens = special_tokens
-        
         # sort special tokens by length
         self.special_tokens.sort(key=len, reverse=True)
         
@@ -74,8 +73,8 @@ class Tokenizer():
                 merged = self.encode_word_from_merges(word)
                 encoded.extend([self.token_to_id[b] for b in merged])
             
-            #if i % 1000000 == 0:
-                #print(f"encoded {i}/{n_words} words")
+            # if i % 1000000 == 0:
+                # print(f"encoded {i}/{n_words} words")
         
         return encoded
     

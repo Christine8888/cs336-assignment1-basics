@@ -4,28 +4,28 @@ import os
 import sys
 import argparse
 
-# Import parse_arguments and main from train
+# use infra from train.py
 from train import parse_arguments, main
 
 @hydra.main(config_path="conf", config_name="config_owt")
 def run_sweep(cfg: DictConfig):
     print(f"Working directory: {os.getcwd()}")
     
-    # Get the default arguments from train.py
+    # use existing command line infrastructure
+    # get the default arguments from train.py
     args = parse_arguments()
     
-    # Update args with values from our config
+    # override in config
     for param_name, param_value in cfg.train_args.items():
         if hasattr(args, param_name):
             setattr(args, param_name, param_value)
     
-    # Set a custom run name to identify the sweep
-    args.run_name = f"sweep_owt_{os.path.basename(os.getcwd())}"
+    args.run_name = f"sweep_{os.path.basename(os.getcwd())}"
     
-    print("Running with parameters:")
+    print("Running train.py with parameters:")
     print(vars(args))
     
-    # Call the main function from train.py
+    # use main function fron train.py
     main(args)
     
     return 0
