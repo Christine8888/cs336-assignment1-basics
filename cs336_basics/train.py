@@ -10,7 +10,7 @@ import time
 import argparse
 import json
 
-log_wandb = True
+log_wandb = False
 DATA_DIR = "/home/c-cye/assignment1-basics/data_tokenized"
 # DATA_DIR = "/users/christineye/cs336/assignment1-basics/data"
 
@@ -69,7 +69,8 @@ class TransformerTrainer:
         
         # initialize run ID for logging
         self.run_id = time.strftime("%m%d_%H%M%S")
-    
+        self.load_data()
+
     def load_data(self):
         # load data memory-efficiently
         self.train_data = np.load(self.train_path, mmap_mode='r', allow_pickle = True).astype(np.uint16)
@@ -162,8 +163,9 @@ class TransformerTrainer:
             valid_loss = self.validate(i)
             f.write(f"Final validation loss: {valid_loss}\n")
 
-            save_path = os.path.join(self.checkpoint_dir, f"checkpoint_final.pt")
-            train_utils.save_checkpoint(self.model, self.optim, i, save_path)
+        save_path = os.path.join(self.checkpoint_dir, f"checkpoint_final.pt")
+        train_utils.save_checkpoint(self.model, self.optim, i, save_path)
+  
     def validate(self, step):
         with torch.no_grad():
             self.model.eval()
@@ -190,6 +192,7 @@ class TransformerTrainer:
             "step": step,
             "total tokens": self.total_tokens,
         })
+        print(valid_loss)
         
         self.model.train()
 
@@ -310,6 +313,9 @@ def main(args = None):
     )
     
     # start training
+    print('Validating')
+    trainer.validate(0)
+    
     trainer.train()
 
 

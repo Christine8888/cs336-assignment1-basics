@@ -7,7 +7,7 @@ import argparse
 # Import parse_arguments and main from train
 from train import parse_arguments, main
 
-@hydra.main(config_path="conf", config_name="config_batch")
+@hydra.main(config_path="conf", config_name="config_owt")
 def run_sweep(cfg: DictConfig):
     print(f"Working directory: {os.getcwd()}")
     
@@ -20,7 +20,7 @@ def run_sweep(cfg: DictConfig):
             setattr(args, param_name, param_value)
     
     # Set a custom run name to identify the sweep
-    args.run_name = f"sweep_{os.path.basename(os.getcwd())}"
+    args.run_name = f"sweep_owt_{os.path.basename(os.getcwd())}"
     
     print("Running with parameters:")
     print(vars(args))

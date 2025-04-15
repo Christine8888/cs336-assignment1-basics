@@ -3,9 +3,10 @@ defaults:
 
 # command line arguments
 train_args:
-  lr: 0.001
+  lr: 0.005
   batch_size: 128
   device: cuda
+  ablation: None
 
 # submitit settings
 hydra:
@@ -20,5 +21,6 @@ hydra:
 
   sweeper:
     params:
-      train_args.batch_size: 32
-      train_args.lr: 0.001,0.005
+      train_args.lr: 0.001, 0.005
+      train_args.ablation: no_layernorm
+        #, postnorm, nope, silu
