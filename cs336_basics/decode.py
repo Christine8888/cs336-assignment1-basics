@@ -4,7 +4,7 @@ import cs336_basics.tokenizer as tokenizer
 import cs336_basics.layers as layers
 import argparse
 
-device = 'cpu'
+device = 'cuda'
 dtype = torch.float32
 
 class LanguageModel():
@@ -29,7 +29,7 @@ class LanguageModel():
         """Sample from language model, including prompting, temperature scaling, and top-p sampling.
         Only allow sampling one sequence at a time; batching functionality is slightly more complicated"""
         prompt_str = prompt
-        prompt_tokenized = torch.Tensor(self.tokenizer.encode(prompt), device = device)
+        prompt_tokenized = torch.Tensor(self.tokenizer.encode(prompt)).to(device)
         eot_token = self.tokenizer.encode("<|endoftext|>")[0]
         n = 0
 
@@ -76,13 +76,12 @@ if __name__ == "__main__":
         "vocab_size": 32000,
         "context_length": 256,
     }
-    device = 'cpu'
-    dtype = torch.float32
-
-    checkpoint_path = "/home/c-cye/assignment1-basics/cs336_basics/multirun/openwebtext/train_args.batch_size=128,train_args.lr=0.005/checkpoints/checkpoint_9000.pt"
+    
+    checkpoint_path = "/data/c-cye/owt_basic/0/checkpoints/checkpoint_9000.pt"
+    #checkpoint_path = "/home/c-cye/assignment1-basics/cs336_basics/multirun/openwebtext/train_args.batch_size=128,train_args.lr=0.005/checkpoints/checkpoint_9000.pt"
     #checkpoint_path = "/home/c-cye/assignment1-basics/cs336_basics/multirun/2025-04-13/lr_sweep/2/checkpoints/checkpoint_9000.pt"
     model = transformer.TransformerLM(**transformer_params_ts, device = device, dtype = dtype)
-    state_dict = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+    state_dict = torch.load(checkpoint_path)#, map_location=torch.device('cpu'))
     model.load_state_dict(state_dict["model"])
     
     lm = LanguageModel(model, tokenizer)

@@ -12,7 +12,6 @@ train_args:
   valid_every: 100
   n_tokens: 3276800000
   ablation: weight_tying
-  run_name: leaderboard_full
   num_layers: 4
   d_model: 512
   d_ff_ratio: 4 
@@ -36,8 +35,9 @@ hydra:
   
   sweeper:
     params:
-      train_args.lr: 0.001,0.003
+      train_args.lr: 0.001,0.0005
       train_args.seq_len: 512
       train_args.context_length: 512
-      train_args.num_layers: 4,6
-      train_args.d_model: 768
+      train_args.num_layers: 6
+      train_args.d_model: 768,1024
+      train_args.batch_size: 64
