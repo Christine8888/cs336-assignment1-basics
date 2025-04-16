@@ -22,6 +22,11 @@ elif model == "gpt2large":
     num_layers = 36
     d_ff = d_model * 4
     num_heads = 20
+elif model == 'ours':
+    d_model = 512
+    num_layers = 4
+    d_ff = 1344
+    num_heads = 16
 
 seq_len = 1024
 batch_size = 1
@@ -74,7 +79,7 @@ def adamw_accounting_nonnaive():
     softmax_acts = seq_len * seq_len * num_heads
     value_acts = seq_len * d_model
     o_acts = seq_len * d_model
-    ffn_acts = seq_len * (d_ff + d_ff + d_model)
+    ffn_acts = seq_len * (d_ff + d_ff + d_ff + d_model) # W1, W3, SiLU(W1) are all in d_ffn; W2 result is in d_model
     transformer_block_acts = rmsnorm_acts + qkv_acts + qtk_acts + softmax_acts + value_acts + o_acts + ffn_acts
     final_ln_acts = seq_len * d_model
     final_embedding_acts = seq_len * vocab_size
@@ -169,7 +174,7 @@ def transformer_accounting():
     a100_flops = 19.5 * 10**12 * 0.5
     a100_cost = gpt_flops / a100_flops
     print('a100 seconds', f"{a100_cost:.2e}")
-    print('a100 days', f"{a100_cost / (60 * 60 * 24):.2e}")
+    print('a100 days', f"{a100_cost / (60 * 60 * 24)}")
 
 if __name__ == "__main__":
     transformer_accounting()
