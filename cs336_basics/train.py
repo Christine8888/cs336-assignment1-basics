@@ -71,6 +71,7 @@ class TransformerTrainer:
         
         # compile
         self.model = torch.compile(self.model)
+        torch.set_float32_matmul_precision(self.training_params["torch_precision"])
         torch.set_float32_matmul_precision('high')
         
         # initialize optimizer
@@ -150,12 +151,14 @@ class TransformerTrainer:
                 self.training_params["T_w"], 
                 self.training_params["T_c"]
             )
+
             for param_group in self.optim.param_groups:
                 param_group["lr"] = lr
             
             # compute forward pass
             logits = self.model(batch)
             loss = train_utils.CELoss(logits, targets)
+            
             loss.backward()
             grad_norm = train_utils.gradient_clipping(self.model.parameters(), 1.0) or 0.0
             self.optim.step()
@@ -257,6 +260,7 @@ def parse_arguments():
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
     parser.add_argument('--seq_len', type=int, default=256, help='Sequence length')
     parser.add_argument('--device', type=str, default='cpu', help='Device (cpu or cuda)')
+    parser.add_argument('--dtype', type=str, default='torch.float32')
     parser.add_argument('--n_valid_batches', type=int, default=10, help='Number of validation batches')
     parser.add_argument('--valid_every', type=int, default=100, help='Validate every N iterations')
     # parser.add_argument('--alpha_max', type=float, default=1e-3, help='Maximum learning rate for cosine annealing')
@@ -270,7 +274,8 @@ def parse_arguments():
     parser.add_argument('--ablation', type=str, default=None, help='Ablation study to run')
     parser.add_argument('--sample', action='store_true', default=True, help='Sample from dataloader?')
     parser.add_argument('--no-sample', action='store_false', dest='sample', help="Don't sample from dataloader")
-    
+    parser.add_argument('--precision', default='high', help='torch internal matrix multiplication precision')
+
     args, unknown = parser.parse_known_args()
     if unknown:
         print(f"Warning: Ignoring unrecognized arguments: {unknown}")
@@ -321,6 +326,11 @@ def main(args = None):
         "eps": args.eps,
         "weight_decay": args.weight_decay,
     }
+
+    if args.dtype == 'torch.bfloat16':
+        dtype = torch.bfloat16
+    else:
+        dtype = torch.float32
     
     training_params = {
         "n_iter": args.n_iter,
@@ -339,6 +349,7 @@ def main(args = None):
         "run_name": args.run_name,
         "ablation": args.ablation,
         "sample": args.sample,
+        "torch_precision": args.precision,
     }
     
     print('Training with parameters:')
