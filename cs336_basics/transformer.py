@@ -3,9 +3,17 @@ import torch.nn as nn
 import torch
 
 class TransformerBlock(nn.Module):
+    """Basic Transformer block."""
     def __init__(self, d_model: int, num_heads: int, d_ff: int, rope: nn.Module = None, **kwargs):
-        # kwargs: device, dtype, etc.
-        # transformer block = x + FFN(RMSNorm(x + attn(RMSNorm(x))))
+        """Initialize a Transformer block.
+        
+        d_model: dimension of the model
+        num_heads: number of attention heads
+        d_ff: dimension of the feed-forward network
+        rope: RoPE module, should be pre-initialized
+        kwargs: device, dtype, etc.
+        """
+
         # can reuse RoPE any number of times
         super().__init__()
         self.d_model = d_model
@@ -17,6 +25,11 @@ class TransformerBlock(nn.Module):
         self.ffn = layers.SwiGLU(d_model, d_ff, **kwargs)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the Transformer block. Computes x + FFN(RMSNorm(x + attn(RMSNorm(x)))).
+        
+        x: input tensor
+        """
+
         # it's so beautiful that my layers are all properly batched!
         h = x + self.attn(self.ln1(x))
         
@@ -25,7 +38,21 @@ class TransformerBlock(nn.Module):
         return h
 
 class TransformerLM(nn.Module):
+    """Full Transformer language model."""
+    
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
+        """Initialize a Transformer language model.
+        
+        d_model: dimension of the model
+        vocab_size: size of the vocabulary
+        context_length: context length
+        num_layers: number of layers
+        rope_theta: RoPE theta
+        num_heads: number of attention heads
+        d_ff: hidden dimension of the feed-forward network
+        kwargs: device, dtype, etc.
+        """
+
         super().__init__()
         self.rope = layers.RoPE(rope_theta, d_model // num_heads, context_length, **kwargs)
         self.embedding = layers.Embedding(vocab_size, d_model, **kwargs)
@@ -58,6 +85,7 @@ class TransformerBlockNoRMSNorm(TransformerBlock):
 class TransformerLMNoRMSNorm(TransformerLM):
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
+        
         # rebuild blocks with no RMSNorm
         self.layers = nn.Sequential(*[
             TransformerBlockNoRMSNorm(d_model, num_heads, d_ff, self.rope, **kwargs)
@@ -68,8 +96,9 @@ class TransformerLMNoRMSNorm(TransformerLM):
         h = self.embedding(x)
         h = self.layers(h)
         h = self.lm_head(h)
-        # no final layer norm
+        # also no final layer norm
         return h
+
 
 """Ablation Study: post-norm vs pre-norm"""
 class TransformerBlockPostNorm(TransformerBlock):
@@ -85,15 +114,18 @@ class TransformerBlockPostNorm(TransformerBlock):
 class TransformerLMPostNorm(TransformerLM):
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
+        # replace the blocks with post-norm
         self.layers = nn.Sequential(*[
             TransformerBlockPostNorm(d_model, num_heads, d_ff, self.rope, **kwargs)
             for _ in range(num_layers)
         ])
 
+
 """Ablation Study: removing positional embeddings"""
 class TransformerLMNoPE(TransformerLM):
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
+        
         self.rope = None
         # rebuild blocks with no positional embeddings
         self.layers = nn.Sequential(*[
@@ -116,6 +148,7 @@ class TransformerLMSiLU(TransformerLM):
             for _ in range(num_layers)
         ])
 
+"""Ablation study: weight tying"""
 class TransformerLMWeightTying(TransformerLM):
     def __init__(self, d_model: int, vocab_size: int, context_length: int, num_layers: int, rope_theta: float, num_heads: int, d_ff: int, **kwargs):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)

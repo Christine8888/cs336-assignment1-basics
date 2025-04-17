@@ -15,7 +15,15 @@ MULTI = 32 #max(multiprocessing.cpu_count() - 1, 1)
 CHUNK_SIZE = 10_000_000
 
 class Tokenizer():
+    """Tokenizer given a BPE vocabulary and merges."""
+
     def __init__(self, vocab, merges, special_tokens = None):
+        """Initialize the tokenizer.
+        
+        vocab: vocabulary
+        merges: merges
+        special_tokens: special tokens
+        """
         self.id_to_token = vocab
         self.token_to_id = {bytes(v): int(k) for k, v in vocab.items()}
         
@@ -33,6 +41,13 @@ class Tokenizer():
     
     @classmethod
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens = None):
+        """Initialize the tokenizer from a BPE vocabulary and merges.
+        
+        vocab_filepath: path to the vocabulary, pickled
+        merges_filepath: path to the merges, pickled
+        special_tokens: special tokens
+        """
+
         # read in pickle files
         with open(vocab_filepath, 'rb') as f:
             vocab = pickle.load(f)
@@ -42,6 +57,11 @@ class Tokenizer():
         return cls(vocab, merges, special_tokens)
 
     def split_by_special_tokens(self, text):
+        """Split the text by special tokens.
+        
+        text: text to split
+        """
+
         if not self.special_tokens:
             return [text]
         
@@ -52,24 +72,31 @@ class Tokenizer():
         return split
 
     def encode(self, text):
+        """Encode a text string into a list of token IDs, accounting for special tokens.
+        
+        text: text to encode
+        """
+
         chunks = self.split_by_special_tokens(text)
         word_list = []
         
+        # first split by special tokens
         for piece in chunks:
             if piece in self.special_tokens:
                 word_list.append(piece)
             else:
                 word_list.extend(match.group() for match in re.finditer(self.pattern, piece))
 
-        # print(word_list)
-        # encode words
+        # encode words one by one
         encoded = []
         n_words = len(word_list)
         
         for i, word in enumerate(word_list):
             if word in self.special_tokens:
+                # special token index
                 encoded.append(self.token_to_id[word.encode('utf-8')])
             else:
+                # compute merges and encode
                 merged = self.encode_word_from_merges(word)
                 encoded.extend([self.token_to_id[b] for b in merged])
             
@@ -79,7 +106,12 @@ class Tokenizer():
         return encoded
     
     def encode_word_from_merges(self, word):
-        # breakpoint()
+        """Encode a word given the merge list, always taking the first appropriate merge.
+        
+        word: string to encode
+        """
+
+        # encode as raw bytes
         byte_list = word.encode('utf-8')
         byte_list = [bytes([b]) for b in byte_list]
 
@@ -88,6 +120,7 @@ class Tokenizer():
             first_idx = float('inf')
             first_pos = None
 
+            # check all possible pairs to merge
             for i in range(len(byte_list) - 1):
                 byte_pair = (byte_list[i], byte_list[i + 1])
                 if byte_pair in self.merges:
@@ -101,6 +134,7 @@ class Tokenizer():
                 # no more valid merges to make
                 break
             
+            # merge the first pair and update bytes
             byte_list = byte_list[:first_pos] + [first_merge] + byte_list[first_pos + 2:]
         
         return byte_list
@@ -114,6 +148,7 @@ class Tokenizer():
         and encodes each chunk using multiprocessing.
         one_at_a_time: if True, yield one token at a time; memory-efficient
         """
+
         batch_num = 0
         special_token = "<|endoftext|>"
         token_len = len(special_token)
@@ -197,6 +232,11 @@ class Tokenizer():
             yield all_tokens
     
     def decode(self, ids):
+        """Decode a list of token IDs into a string, using the BPE vocabulary.
+        
+        ids: list of token IDs
+        """
+
         # first decode ids into bytes
         byte_list = b""
         for id in ids:
@@ -210,51 +250,10 @@ class Tokenizer():
         
         # then decode bytes into text
         return byte_list.decode('utf-8', errors='replace')
-
-
-def chunk_documents_streaming(
-    path: str,
-    chunk_size: int = CHUNK_SIZE,
-    special_token: str = "<|endoftext|>"
-):
-    """
-    Reads 'path' in streaming fashion, yielding chunks of text that
-    each end on a '<|endoftext|>' boundary.
-    """
-
-    leftover = ""
-    token_len = len(special_token)
-
-    with open(path, "r", encoding="utf-8") as f:
-        while True:
-            # Read one chunk_size block of text
-            block = f.read(chunk_size)
-            if not block:
-                # no more data in file
-                break
-
-            # combine leftover from previous iteration + new block
-            block = leftover + block
-            leftover = ""
-
-            # find the *last* occurrence of the special token in 'block'
-            last_eot_idx = block.rfind(special_token)
-
-            if last_eot_idx == -1:
-                # no complete document in this chunk
-                # keep everything in leftover for the next read
-                leftover = block
-            else:
-                # up through last_eot_idx is a complete set of docs
-                yield block[: last_eot_idx + token_len]
-                # keep everything after that boundary as leftover
-                leftover = block[last_eot_idx + token_len :]
-
-    # yield leftover text
-    if leftover:
-        yield leftover
     
 def chunked_text_generator(filepath):
+    """Old function to chunk text by special tokens."""
+
     with open(filepath, 'r') as f:
         buffer = []
         total_chars = 0
@@ -269,12 +268,15 @@ def chunked_text_generator(filepath):
             yield ''.join(buffer)
 
 def test_tokenizer(files = 'openwebtext', data_path = '../data/owt_valid.txt'):
+    """Test the tokenizer and get compression ratio + longest token."""
+
     special_tokens = ["<|endoftext|>"]
     tokenizer = Tokenizer.from_files(vocab_filepath = f"./models/{files}_vocab.pkl", merges_filepath = f"./models/{files}_merges.pkl", 
                                      special_tokens = special_tokens)
     
     text = open(data_path, "r").read()
     text = text.split("<|endoftext|>")
+    
     # set random seed for reproducibility
     random.seed(42)
     sampled_texts = random.sample(text, 10)
@@ -293,7 +295,13 @@ def test_tokenizer(files = 'openwebtext', data_path = '../data/owt_valid.txt'):
     print(bytes(longest_token).decode('utf-8'))
 
 def tokenize_corpus(files = 'openwebtext', data_path = '../data/owt_', split = 'train'):
-    # so stupid i forgot to split on special tokens 
+    """Tokenize a full corpus.
+    
+    files: name of the dataset, should match the stem of the vocabulary and merges files
+    data_path: stem for the path to the corpus
+    split: corpus split to tokenize
+    """
+
     special_tokens = ["<|endoftext|>"]
     tokenizer = Tokenizer.from_files(vocab_filepath = f"./models/{files}_vocab.pkl", merges_filepath = f"./models/{files}_merges.pkl", 
                                      special_tokens = special_tokens)
@@ -301,8 +309,8 @@ def tokenize_corpus(files = 'openwebtext', data_path = '../data/owt_', split = '
     start_time = time.time()
 
     corpus_path = f"{data_path}{split}.txt"
-    # corpus_path = "../tests/fixtures/tinystories_sample.txt"
     
+    # decide how memory efficeint we want to be
     memory_save = False
     
     if memory_save:
@@ -323,22 +331,25 @@ def tokenize_corpus(files = 'openwebtext', data_path = '../data/owt_', split = '
     with open(f"../data_tokenized/{files}_tokenized-{split}.npy", "wb") as f:
         np.save(f, tokenized_text)
     
+
+    # compute time and throughput
     end_time = time.time()
     print(f"total time: {end_time - start_time} seconds")
-    # total_bytes = len(tokenizer.decode(tokenized_text).encode('utf-8'))
+    
     # get file size
     total_bytes = os.path.getsize(f"../data_tokenized/{files}_tokenized-{split}.npy")
     print(f"total bytes: {total_bytes}")
     print(f"throughput: {total_bytes / (end_time - start_time)} bytes per second")
+    
     return tokenized_text
 
 if __name__ == "__main__":
-    # test_tokenizer(files = 'tinystories', data_path = '../data/TinyStoriesV2-GPT4-valid.txt')
-    # test_tokenizer(files = 'openwebtext', data_path = '../data/owt_valid.txt')
-    tokenize_corpus(files = 'tinystories', data_path = '/data/a1-basics/TinyStoriesV2-GPT4-', split = 'valid')
-    tokenize_corpus(files = 'tinystories', data_path = '/data/a1-basics/TinyStoriesV2-GPT4-', split = 'train')
-    tokenize_corpus(files = 'openwebtext', data_path = '/data/a1-basics/owt_', split = 'valid')
-    tokenize_corpus(files = 'openwebtext', data_path = '/data/a1-basics/owt_', split = 'train')
+    test_tokenizer(files = 'tinystories', data_path = '../data/TinyStoriesV2-GPT4-valid.txt')
+    test_tokenizer(files = 'openwebtext', data_path = '../data/owt_valid.txt')
+    #tokenize_corpus(files = 'tinystories', data_path = '/data/a1-basics/TinyStoriesV2-GPT4-', split = 'valid')
+    #tokenize_corpus(files = 'tinystories', data_path = '/data/a1-basics/TinyStoriesV2-GPT4-', split = 'train')
+    #tokenize_corpus(files = 'openwebtext', data_path = '/data/a1-basics/owt_', split = 'valid')
+    #tokenize_corpus(files = 'openwebtext', data_path = '/data/a1-basics/owt_', split = 'train')
 
     # # run with cprofile
     # cProfile.run('tokenize_corpus(files = "tinystories", split = "valid")', 'tokenizer_stats')

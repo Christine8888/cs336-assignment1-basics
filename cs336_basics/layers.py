@@ -5,7 +5,16 @@ import math
 from jaxtyping import Float
 
 class Linear(nn.Module):
+    """Linear layer."""
+    
     def __init__(self, in_features, out_features, device = None, dtype = None):
+        """Initialize the linear layer. Note that we store the transpose of the weight matrix.
+        
+        in_features: number of input features
+        out_features: number of output features
+        device: device to store the weight matrix on
+        dtype: data type of the weight matrix
+        """
         super().__init__()
         self.weight = nn.Parameter(torch.zeros(out_features, in_features, device = device, dtype = dtype)) # store W^T
         stdev = (2 / (in_features + out_features)) ** 0.5
@@ -16,7 +25,16 @@ class Linear(nn.Module):
         return x @ self.weight.T
 
 class Embedding(nn.Module):
+    """Embedding layer."""
+    
     def __init__(self, num_embeddings, embedding_dim, device = None, dtype = torch.float32):
+        """Initialize the embedding layer.
+        
+        num_embeddings: number of embeddings
+        embedding_dim: dimension of each embedding
+        device: device to store the embedding matrix on
+        dtype: data type of the embedding matrix
+        """
         super().__init__()
         self.vocab_size = num_embeddings
         self.matrix = nn.Parameter(torch.zeros(num_embeddings, embedding_dim, device = device, dtype = dtype))
@@ -33,7 +51,15 @@ class Embedding(nn.Module):
         return embeddings
 
 class RMSNorm(nn.Module):
+    """RMSNorm layer."""
     def __init__(self, d_model: int, eps: float = 1e-5, device = None, dtype = None):
+        """Initialize the RMSNorm layer.
+        
+        d_model: dimension of the model
+        eps: epsilon for numerical stability
+        device: device to store the gain on
+        dtype: data type of the gain
+        """
         super().__init__()
         self.gain = nn.Parameter(torch.ones(d_model, device = device, dtype = dtype))
         self.eps = eps
@@ -55,10 +81,19 @@ class RMSNorm(nn.Module):
         return result.to(in_dtype)
 
 def silu(x: torch.Tensor) -> torch.Tensor:
+    """SiLU activation function."""
     return x * torch.sigmoid(x)
 
 class SiLU(nn.Module):
+    """SiLU feed-forward network"""
     def __init__(self, d_model, d_ff, device = None, dtype = None):
+        """Initialize SiLU feed-forward network.
+        
+        d_model: dimension of the model
+        d_ff: dimension of hidden layer
+        device: device to store the weights on
+        dtype: data type of the weights
+        """
         super().__init__()
         
         self.W1 = nn.Parameter(torch.zeros(d_ff, d_model, device = device, dtype = dtype))
@@ -69,17 +104,21 @@ class SiLU(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Compute W2(SiLU(W1(x)))"""
+
         w1x = einops.einsum(x, self.W1, "... d_model, d_ff d_model -> ... d_ff")
         z = silu(w1x)
         result = einops.einsum(z, self.W2, "... d_ff, d_model d_ff -> ... d_model")
         return result
 
 class SwiGLU(nn.Module):
+    """SwiGLU feed-forward network"""
     def __init__(self, d_model, d_ff = None, device = None, dtype = None):
-        """Layers have the following shapes:
-        W1: (d_ff, d_model)
-        W2: (d_model, d_ff)
-        W3: (d_ff, d_model)
+        """Initialize SwiGLU feed-forward network.
+        
+        d_model: dimension of the model
+        d_ff: dimension of hidden layer
+        device: device to store the weights on
+        dtype: data type of the weights
         """
         super().__init__()
         
@@ -96,6 +135,8 @@ class SwiGLU(nn.Module):
         torch.nn.init.trunc_normal_(self.W3, mean = 0, std = stdev, a = -3 * stdev, b = 3 * stdev)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute SwiGLU(x) = W2(SiLU(W1(x)) * W3(x))"""
+
         w1x = einops.einsum(x, self.W1, "... d_model, d_ff d_model -> ... d_ff")
         w3x = einops.einsum(x, self.W3, "... d_model, d_ff d_model -> ... d_ff")
         
@@ -107,7 +148,17 @@ class SwiGLU(nn.Module):
         return result
 
 class RoPE(nn.Module):
+    """Rotary positional embeddings."""
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device = None, dtype = torch.float32):
+        """Initialize RoPE.
+        
+        theta: theta for RoPE
+        d_k: RoPE dimension
+        max_seq_len: maximum sequence length
+        device: device to store the values on
+        dtype: data type of the values
+        """
+
         super().__init__()
         self.theta = theta
         self.d_k = d_k
@@ -163,6 +214,8 @@ class RoPE(nn.Module):
 
 # need to exp over all dimensions, but only apply softmax along the desired dimension
 def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
+    """Compute softmax over a given dimension."""
+
     # get max value over dimension dim
     offset = torch.max(x, dim = dim, keepdim = True)[0]
 
@@ -180,6 +233,14 @@ def scaled_dot_product_attention(Q: Float[torch.Tensor, "... seq_len_q d_k"],
                                  K: Float[torch.Tensor, "... seq_len_k d_k"], 
                                  V: Float[torch.Tensor, "... seq_len_k d_v"], 
                                  mask: Float[torch.Tensor, "... seq_len_q seq_len_k"] = None) -> Float[torch.Tensor, "... seq_len_q d_v"]:
+    """Compute scaled dot product attention.
+    
+    Q: queries, shape (..., seq_len_q, d_k)
+    K: keys, shape (..., seq_len_k, d_k)
+    V: values, shape (..., seq_len_k, d_v)
+    mask: mask to apply to the attention weights, shape (..., seq_len_q, seq_len_k)
+    """
+
     d_k = Q.shape[-1]
     
     # sum over hidden dimension to get dot product
@@ -198,9 +259,18 @@ def scaled_dot_product_attention(Q: Float[torch.Tensor, "... seq_len_q d_k"],
     return result
 
 class MultiHeadSelfAttention(nn.Module):
+    """Multi-head self-attention layer."""
+    
     def __init__(self, d_model: int, num_heads: int, rope: nn.Module = None, device = None, dtype = None):
+        """Initialize multi-head self-attention layer.
+        
+        d_model: dimension of the model
+        num_heads: number of attention heads
+        rope: RoPE module
+        device: device to store the weights on
+        dtype: data type of the weights
+        """
         super().__init__()
-
         self.num_heads = num_heads
         self.d_model = d_model
         self.rope = rope

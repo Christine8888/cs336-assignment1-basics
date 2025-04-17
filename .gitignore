@@ -1,3 +1,4 @@
+*.zip
 cs336_basics/checkpoints
 cs336_basics/wandb
 data/
@@ -169,3 +170,4 @@ cython_debug/
 #.idea/
 
 .ruff_cache/
+*.zip

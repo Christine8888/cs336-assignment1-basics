@@ -5,7 +5,23 @@ import torch
 import math
 
 class AdamW(torch.optim.Optimizer):
+    """
+    AdamW optimizer implementation.
+    """
     def __init__(self, params, lr = 1e-3, betas = (0.9, 0.95), eps = 1e-8, weight_decay = 1e-2, device = None, dtype = torch.float32):
+        """
+        Initialize the AdamW optimizer.
+
+        Args:
+            params (iterable): iterable of parameters to optimize or dicts defining parameter groups
+            lr (float, optional): learning rate (default: 1e-3)
+            betas (tuple, optional): adamw betas (default: (0.9, 0.95))
+            eps (float, optional): added to the denominator for stability (default: 1e-8)
+            weight_decay (float, optional): weight decay (L2 penalty) (default: 1e-2)
+            device (torch.device, optional): device (default: None)
+            dtype (torch.dtype, optional): data type of the parameters and buffers (default: torch.float32)
+        """
+        
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if any(beta < 0 or beta > 1 for beta in betas):
@@ -25,6 +41,9 @@ class AdamW(torch.optim.Optimizer):
                 self.state[p]["v"] = torch.zeros_like(p.data, dtype = dtype, device = device)
     
     def step(self):
+        """
+        Perform single optimization step.
+        """
         for group in self.param_groups:
             alpha = group["lr"]
             beta_1, beta_2 = group["betas"]
@@ -55,6 +74,7 @@ class AdamW(torch.optim.Optimizer):
                 state["t"] = t + 1
 
 class SGD(torch.optim.Optimizer):
+    """Basic SGD optimizer, implemented for Assignment 1 problems."""
     def __init__(self, params, lr = 1e-3):
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
