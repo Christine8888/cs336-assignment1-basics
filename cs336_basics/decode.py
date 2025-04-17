@@ -64,7 +64,7 @@ class LanguageModel():
         return prompt_str
 
 if __name__ == "__main__":
-    files = 'openwebtext'
+    files = 'tinystories'
     tokenizer = tokenizer.Tokenizer.from_files(vocab_filepath = f"./models/{files}_vocab.pkl", merges_filepath = f"./models/{files}_merges.pkl", special_tokens = ['<|endoftext|>'])
     
     transformer_params_ts = {
@@ -73,11 +73,12 @@ if __name__ == "__main__":
         "d_ff": 1344,
         "rope_theta": 10000,
         "num_layers": 4,
-        "vocab_size": 32000,
+        "vocab_size": 10000,
         "context_length": 256,
     }
     
-    checkpoint_path = "/data/c-cye/owt_basic/0/checkpoints/checkpoint_9000.pt"
+    checkpoint_path = "/data/c-cye/lr_sweep/2/checkpoints/checkpoint_9000.pt"
+    #checkpoint_path = "/data/c-cye/owt_basic/0/checkpoints/checkpoint_9000.pt"
     #checkpoint_path = "/home/c-cye/assignment1-basics/cs336_basics/multirun/openwebtext/train_args.batch_size=128,train_args.lr=0.005/checkpoints/checkpoint_9000.pt"
     #checkpoint_path = "/home/c-cye/assignment1-basics/cs336_basics/multirun/2025-04-13/lr_sweep/2/checkpoints/checkpoint_9000.pt"
     model = transformer.TransformerLM(**transformer_params_ts, device = device, dtype = dtype)
