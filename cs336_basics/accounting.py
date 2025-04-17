@@ -101,6 +101,7 @@ def adamw_accounting_nonnaive():
     starting_memory = all_acts + 3 * all_params
 
     print('fixed memory:', 3 * all_params)
+    print('batch size:', (80 * 10 ** 9 - (3 * all_params)) / all_acts)
     print('total starting memory:', starting_memory)
 
     # final embedding layer
@@ -177,4 +178,4 @@ def transformer_accounting():
     print('a100 days', f"{a100_cost / (60 * 60 * 24)}")
 
 if __name__ == "__main__":
-    transformer_accounting()
+    adamw_accounting_nonnaive()
