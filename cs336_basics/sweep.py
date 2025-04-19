@@ -7,7 +7,7 @@ import argparse
 # use infra from train.py
 from train import parse_arguments, main
 
-@hydra.main(config_path="conf", config_name="config_90")
+@hydra.main(config_path="conf", config_name="config_final")
 def run_sweep(cfg: DictConfig):
     print(f"Working directory: {os.getcwd()}")
     

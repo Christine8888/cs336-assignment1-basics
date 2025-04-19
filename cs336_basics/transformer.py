@@ -153,8 +153,8 @@ class TransformerBlockWeightTying(TransformerBlock):
     def __init__(self, d_model: int, num_heads: int, d_ff: int, rope: nn.Module = None, **kwargs):
         super().__init__(d_model, num_heads, d_ff, rope, **kwargs)
         # add second additional layer norms
-        self.ln3 = layers.RMSNorm(d_ff, **kwargs)
-        self.ln4 = layers.RMSNorm(d_ff, **kwargs)
+        self.ln3 = layers.RMSNorm(d_model, **kwargs)
+        self.ln4 = layers.RMSNorm(d_model, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h = x + self.ln3(self.attn(self.ln1(x)))
@@ -166,10 +166,11 @@ class TransformerLMWeightTying(TransformerLM):
         super().__init__(d_model, vocab_size, context_length, num_layers, rope_theta, num_heads, d_ff, **kwargs)
 
         # rebuild blocks with double layer norms
-        self.layers = nn.Sequential(*[
-            TransformerBlockWeightTying(d_model, num_heads, d_ff, self.rope, **kwargs)
-            for _ in range(num_layers)
-        ])
+        # this didn't help at all
+        # self.layers = nn.Sequential(*[
+        #    TransformerBlockWeightTying(d_model, num_heads, d_ff, self.rope, **kwargs)
+        #    for _ in range(num_layers)
+        # ])
 
         # implement weight tying
         embedding_params = nn.Parameter(torch.zeros(vocab_size, d_model, **kwargs))

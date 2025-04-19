@@ -130,6 +130,8 @@ class TransformerTrainer:
         # setup wandb
         if log_wandb: self.setup_wandb()
         self.start_time = time.time()
+        
+        scaler = torch.cuda.amp.GradScaler() if self.training_params.get("amp", False) else None
 
         # train loop
         for i in range(self.training_params["n_iter"]):
@@ -156,17 +158,29 @@ class TransformerTrainer:
                 param_group["lr"] = lr
             
             # compute forward pass
-            logits = self.model(batch)
-            loss = train_utils.CELoss(logits, targets)
+            if scaler:
+                with torch.cuda.amp.autocast():
+                    logits = self.model(batch)
+                    loss = train_utils.CELoss(logits, targets)
+
+                scaler.scale(loss).backward()
+                scaler.unscale_(self.optim)
+                grad_norm = train_utils.gradient_clipping(self.model.parameters(), 1.0) or 0.0
+                scaler.step(self.optim)
+                scaler.update()
+            else:
+                logits = self.model(batch)
+                loss = train_utils.CELoss(logits, targets)
             
-            loss.backward()
-            grad_norm = train_utils.gradient_clipping(self.model.parameters(), 1.0) or 0.0
-            self.optim.step()
-            self.optim.zero_grad()
+                loss.backward()
+                grad_norm = train_utils.gradient_clipping(self.model.parameters(), 1.0) or 0.0
+                self.optim.step()
+            
+            self.optim.zero_grad(set_to_none = True)
             self.total_tokens += self.training_params["batch_size"] * self.training_params["seq_len"]
-            
+        
             # log to wandb
-            if log_wandb: wandb.log({
+            if log_wandb and i % self.training_params["log_every"] == 0: wandb.log({
                 "loss": loss.item(),
                 "learning_rate": self.optim.param_groups[0]["lr"],
                 "grad_norm": grad_norm,
@@ -175,7 +189,7 @@ class TransformerTrainer:
                 "tok/s": self.training_params["batch_size"] * self.training_params["seq_len"] / (time.time() - iter_start),
             })
             
-            print(f"Step {i} loss: {loss.item()}")
+            # print(f"Step {i} loss: {loss.item()}")
             
             # save checkpoints
             if i % self.training_params["checkpoint_every"] == 0:
@@ -263,6 +277,7 @@ def parse_arguments():
     parser.add_argument('--dtype', type=str, default='torch.float32')
     parser.add_argument('--n_valid_batches', type=int, default=10, help='Number of validation batches')
     parser.add_argument('--valid_every', type=int, default=100, help='Validate every N iterations')
+    parser.add_argument('--log_every', type = int, default=100, help='Log every N iterations')
     # parser.add_argument('--alpha_max', type=float, default=1e-3, help='Maximum learning rate for cosine annealing')
     # parser.add_argument('--alpha_min', type=float, default=1e-4, help='Minimum learning rate for cosine annealing')
     # parser.add_argument('--T_w', type=int, default=500, help='Warmup period for cosine annealing')
@@ -275,6 +290,7 @@ def parse_arguments():
     parser.add_argument('--sample', action='store_true', default=True, help='Sample from dataloader?')
     parser.add_argument('--no-sample', action='store_false', dest='sample', help="Don't sample from dataloader")
     parser.add_argument('--precision', default='high', help='torch internal matrix multiplication precision')
+    parser.add_argument('--amp', default=False, type=bool,help='use torch AMP?')
 
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -298,14 +314,15 @@ def main(args = None):
     # set cosine annealing by default
     args.alpha_max = args.lr
     args.alpha_min = args.lr / 10
-    args.T_w = args.n_iter // 20
-    args.T_c = args.n_iter
 
     if args.n_tokens is not None:
         # default value: 128 * 256 * 10000
         args.n_iter = args.n_tokens // (args.batch_size * args.seq_len)
         args.n_iter = int(args.n_iter)
     
+    args.T_w = args.n_iter // 20
+    args.T_c = args.n_iter
+
     if args.d_ff_ratio is not None:
         args.d_ff = args.d_model * args.d_ff_ratio
 
@@ -338,9 +355,10 @@ def main(args = None):
         "batch_size": args.batch_size,
         "seq_len": args.seq_len,
         "device": args.device,
-        "dtype": args.dtype,
+        "dtype": dtype,
         "n_valid_batches": args.n_valid_batches,
         "valid_every": args.valid_every,
+        "log_every": args.log_every,
         "alpha_max": args.alpha_max,
         "alpha_min": args.alpha_min,
         "T_w": args.T_w,
@@ -350,6 +368,7 @@ def main(args = None):
         "ablation": args.ablation,
         "sample": args.sample,
         "torch_precision": args.precision,
+        "amp": args.amp,
     }
     
     print('Training with parameters:')
